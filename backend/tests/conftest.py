@@ -12,14 +12,15 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 from datetime import datetime
+import pytest_asyncio
 
 # 延迟导入以避免循环依赖
 # from src.main import app
 # from src.core.database import get_db
-# from src.models.base import Base
-# from src.models.user import User
-# from src.models.project import Project, ProjectStatus, FileProcessingStatus, SupportedFileType
-# from src.services.project_service import ProjectService
+from src.models.base import Base
+from src.models.user import User
+from src.models.project import Project, ProjectStatus
+from src.services.project import ProjectService
 # from src.utils.storage import MinIOStorage
 
 # 测试数据库URL
@@ -48,7 +49,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """创建测试数据库会话"""
     async with test_engine.begin() as conn:
@@ -61,7 +62,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """创建测试客户端"""
     from httpx import ASGITransport
@@ -102,7 +103,7 @@ def test_project_data():
     }
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def auth_headers(client: AsyncClient, test_user_data: dict):
     """获取认证头"""
     # 注册用户
@@ -199,18 +200,20 @@ def hello_world():
 def mock_user():
     """模拟用户对象"""
     from src.models.user import User
-    return User(
-        id="test-user-123",
-        email="test@example.com",
-        name="Test User",
-        created_at=None
-    )
+    user = Mock(spec=User)
+    user.id = "test-user-123"
+    user.username = "testuser"
+    user.email = "test@example.com"
+    user.display_name = "Test User"
+    user.is_active = True
+    user.is_verified = True
+    return user
 
 
 @pytest.fixture
 def mock_storage_client():
     """模拟存储客户端"""
-    storage = Mock(spec=MinIOStorage)
+    storage = Mock()
     storage.bucket_name = "test-bucket"
 
     # 配置默认返回值
@@ -247,7 +250,7 @@ def mock_project_service():
     service.create_project = AsyncMock(return_value=Mock(
         id="project-123",
         title="Test Project",
-        status=ProjectStatus.ACTIVE.value
+        status=ProjectStatus.UPLOADED.value
     ))
 
     service.get_project_by_id = AsyncMock(return_value=Mock(
@@ -314,18 +317,16 @@ def mock_project_factory():
         project_id="project-123",
         title="Test Project",
         description="Test description",
-        status=ProjectStatus.ACTIVE,
-        file_type=SupportedFileType.TXT,
-        processing_status=FileProcessingStatus.COMPLETED
+        status=ProjectStatus.UPLOADED,
+        file_type="txt",
     ):
         project = Mock(spec=Project)
         project.id = project_id
         project.title = title
         project.description = description
-        project.status = status.value
-        project.file_type = file_type.value
-        project.file_processing_status = processing_status.value
-        project.user_id = "test-user-123"
+        project.status = status.value if hasattr(status, 'value') else status
+        project.file_type = file_type
+        project.owner_id = "test-user-123"
         project.file_size = 1024
         project.original_filename = "test.txt"
         project.minio_bucket = "test-bucket"
@@ -403,7 +404,7 @@ def setup_mocks(monkeypatch):
         pass
 
     try:
-        monkeypatch.setattr("src.services.project_service.get_project_service", lambda: AsyncMock())
+        monkeypatch.setattr("src.services.project.get_project_service", lambda: AsyncMock())
     except AttributeError:
         pass
 

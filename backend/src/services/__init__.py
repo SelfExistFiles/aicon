@@ -11,7 +11,7 @@
 # from .video_synthesis import VideoSynthesisService
 # from .publisher import PublisherService
 # from .api_manager import APIManagerService
-# from .project_service import ProjectService
+from .project import ProjectService
 # from .usage_service import UsageService
 
 __all__ = [
@@ -24,6 +24,6 @@ __all__ = [
     # "VideoSynthesisService",
     # "PublisherService",
     # "APIManagerService",
-    # "ProjectService",
+    "ProjectService",
     # "UsageService",
 ]
