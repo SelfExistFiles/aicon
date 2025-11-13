@@ -1,13 +1,13 @@
 """
 文本解析服务 - 智能章节识别和内容解析
-严格按照data-model.md规范实现，支持多种章节标记格式
+严格按照data-model.md规范实现，专注于核心文本解析功能
 """
 
 import re
-from typing import List, Dict, Tuple, Optional, Any
-from dataclasses import dataclass
+import time
 from abc import ABC, abstractmethod
-import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from src.core.logging import get_logger
@@ -20,12 +20,15 @@ except ImportError:
         import logging
         return logging.getLogger(name)
 
+
     # 创建简单的枚举模拟
     class ChapterStatus:
         PENDING = "pending"
 
+
     class ParagraphAction:
         KEEP = "keep"
+
 
     class SentenceStatus:
         PENDING = "pending"
@@ -41,7 +44,7 @@ class ChapterDetection:
     chapter_number: int
     start_position: int
     end_position: int
-    detection_method: str  # regex, ml, hybrid
+    detection_method: str  # regex, fallback
     confidence_score: float = 0.0
 
 
@@ -51,7 +54,6 @@ class ParsedContent:
     chapters: List[ChapterDetection]
     paragraphs: List[str]
     sentences: List[str]
-    metadata: Dict[str, Any]
     processing_time: float = 0.0
 
 
@@ -196,85 +198,16 @@ class RegexChapterDetector(ChapterDetector):
         return chapters
 
 
-class TextSplitter:
-    """文本分割工具类"""
-
-    @staticmethod
-    def split_into_paragraphs(text: str) -> List[str]:
-        """将文本分割为段落"""
-        if not text:
-            return []
-
-        # 标准化换行符
-        text = text.replace('\r\n', '\n').replace('\r', '\n')
-
-        # 分割为段落
-        paragraphs = []
-        lines = text.split('\n')
-        current_paragraph = []
-
-        for line in lines:
-            line = line.strip()
-            if line:
-                current_paragraph.append(line)
-            elif current_paragraph:
-                # 遇到空行，结束当前段落
-                paragraph = ' '.join(current_paragraph)
-                if paragraph:
-                    paragraphs.append(paragraph)
-                current_paragraph = []
-
-        # 添加最后一个段落
-        if current_paragraph:
-            paragraph = ' '.join(current_paragraph)
-            if paragraph:
-                paragraphs.append(paragraph)
-
-        return paragraphs
-
-    @staticmethod
-    def split_into_sentences(text: str) -> List[str]:
-        """将文本分割为句子"""
-        if not text:
-            return []
-
-        # 句子结束标记
-        sentence_endings = re.compile(r'[。！？.!?]+')
-
-        sentences = []
-        start = 0
-
-        for match in sentence_endings.finditer(text):
-            end = match.end()
-            sentence = text[start:end].strip()
-
-            if sentence and len(sentence) > 2:  # 过滤过短的句子
-                sentences.append(sentence)
-
-            start = end
-
-        # 处理最后部分（如果没有句号结尾）
-        if start < len(text):
-            remaining = text[start:].strip()
-            if remaining and len(remaining) > 2:
-                sentences.append(remaining)
-
-        return sentences
-
-
 class TextParserService:
     """文本解析服务主类"""
 
     def __init__(self):
         self.detector = RegexChapterDetector()
-        self.splitter = TextSplitter()
-
         # 统计信息
         self.stats = {
             'total_documents_processed': 0,
             'total_chapters_detected': 0,
-            'average_chapters_per_document': 0.0,
-            'detection_accuracy': 0.0
+            'average_chapters_per_document': 0.0
         }
 
     async def parse_document(self, text: str, options: Optional[Dict[str, Any]] = None) -> ParsedContent:
@@ -285,13 +218,10 @@ class TextParserService:
             text: 待解析的文本内容
             options: 解析选项
                 - min_chapter_length: 最小章节长度（默认1000字符）
-                - preserve_structure: 保持原始结构（默认True）
-                - language: 语言设置（默认'zh'）
 
         Returns:
             ParsedContent: 解析结果
         """
-        import time
         start_time = time.time()
 
         if not text or not text.strip():
@@ -311,30 +241,22 @@ class TextParserService:
                 logger.info("单个章节过长，尝试智能分割")
                 chapters = self._split_long_chapter(text)
 
-            # 3. 为每个章节分割段落和句子
+            # 3. 导入文本分割工具（直接导入，避免依赖问题）
+            from src.utils.text_utils import paragraph_splitter, sentence_splitter
+
+            # 4. 为每个章节分割段落和句子
             all_paragraphs = []
             all_sentences = []
 
             for chapter in chapters:
                 # 分割段落
-                paragraphs = self.splitter.split_into_paragraphs(chapter.content)
+                paragraphs = paragraph_splitter.split_into_paragraphs(chapter.content)
                 all_paragraphs.extend(paragraphs)
 
                 # 分割句子
                 for paragraph in paragraphs:
-                    sentences = self.splitter.split_into_sentences(paragraph)
+                    sentences = sentence_splitter.split_into_sentences(paragraph)
                     all_sentences.extend(sentences)
-
-            # 4. 构建元数据
-            metadata = {
-                'total_length': len(text),
-                'chapter_count': len(chapters),
-                'paragraph_count': len(all_paragraphs),
-                'sentence_count': len(all_sentences),
-                'detection_methods': list(set(c.detection_method for c in chapters)),
-                'average_confidence': sum(c.confidence_score for c in chapters) / len(chapters) if chapters else 0,
-                'options_used': options
-            }
 
             processing_time = time.time() - start_time
 
@@ -345,7 +267,6 @@ class TextParserService:
                 chapters=chapters,
                 paragraphs=all_paragraphs,
                 sentences=all_sentences,
-                metadata=metadata,
                 processing_time=processing_time
             )
 
@@ -426,10 +347,11 @@ class TextParserService:
         """更新统计信息"""
         self.stats['total_documents_processed'] += 1
         self.stats['total_chapters_detected'] += chapter_count
-        self.stats['average_chapters_per_document'] = (
-            self.stats['total_chapters_detected'] /
-            self.stats['total_documents_processed']
-        )
+        if self.stats['total_documents_processed'] > 0:
+            self.stats['average_chapters_per_document'] = (
+                    self.stats['total_chapters_detected'] /
+                    self.stats['total_documents_processed']
+            )
 
     async def parse_to_models(self, project_id: str, text: str, options: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict], List[Dict], List[Dict]]:
         """
@@ -458,12 +380,8 @@ class TextParserService:
                 'chapter_number': chapter_detection.chapter_number,
                 'word_count': len(chapter_detection.content),
                 'paragraph_count': 0,  # 稍后更新
-                'sentence_count': 0,   # 稍后更新
+                'sentence_count': 0,  # 稍后更新
                 'status': ChapterStatus.PENDING.value,
-                'is_confirmed': False,
-                'generation_settings': None,
-                'created_at': None,  # 由数据库自动设置
-                'updated_at': None   # 由数据库自动设置
             }
             chapters_data.append(chapter_data)
 
@@ -472,9 +390,12 @@ class TextParserService:
         paragraph_index = 0
         sentence_index = 0
 
+        # 导入文本分割工具
+        from src.utils.text_utils import paragraph_splitter, sentence_splitter
+
         for chapter_idx, chapter_detection in enumerate(parsed.chapters):
             # 获取当前章节的段落
-            chapter_paragraphs = self.splitter.split_into_paragraphs(chapter_detection.content)
+            chapter_paragraphs = paragraph_splitter.split_into_paragraphs(chapter_detection.content)
 
             chapter_sentence_count = 0
 
@@ -486,18 +407,11 @@ class TextParserService:
                     'word_count': len(paragraph_text),
                     'sentence_count': 0,  # 稍后更新
                     'action': ParagraphAction.KEEP.value,
-                    'edited_content': None,
-                    'is_confirmed': False,
-                    'ignore_reason': None,
-                    'audio_url': None,
-                    'audio_duration': None,
-                    'created_at': None,
-                    'updated_at': None
                 }
                 paragraphs_data.append(paragraph_data)
 
                 # 获取当前段落的句子
-                paragraph_sentences = self.splitter.split_into_sentences(paragraph_text)
+                paragraph_sentences = sentence_splitter.split_into_sentences(paragraph_text)
                 chapter_sentence_count += len(paragraph_sentences)
                 paragraph_data['sentence_count'] = len(paragraph_sentences)
 
@@ -508,27 +422,7 @@ class TextParserService:
                         'order_index': sent_idx + 1,
                         'word_count': len(sentence_text),
                         'character_count': len(sentence_text),
-                        'image_url': None,
-                        'image_prompt': None,
-                        'audio_url': None,
-                        'start_time': None,
-                        'end_time': None,
-                        'duration': None,
-                        'confidence_score': None,
-                        'voice_settings': None,
-                        'voice_type': None,
-                        'speech_rate': 1.0,
-                        'pitch': 1.0,
-                        'volume': 1.0,
                         'status': SentenceStatus.PENDING.value,
-                        'error_message': None,
-                        'retry_count': 0,
-                        'edited_content': None,
-                        'edited_prompt': None,
-                        'is_manual_edited': False,
-                        'created_at': None,
-                        'updated_at': None,
-                        'completed_at': None
                     }
                     sentences_data.append(sentence_data)
                     sentence_index += 1
@@ -548,64 +442,6 @@ class TextParserService:
         """获取检测统计信息"""
         return self.stats.copy()
 
-    async def validate_chapter_detection(self, text: str, expected_chapters: Optional[int] = None) -> Dict[str, Any]:
-        """
-        验证章节检测结果
-
-        Args:
-            text: 待检测文本
-            expected_chapters: 预期章节数量（可选）
-
-        Returns:
-            验证结果
-        """
-        try:
-            parsed = await self.parse_document(text)
-
-            validation_result = {
-                'is_valid': True,
-                'detected_chapters': len(parsed.chapters),
-                'expected_chapters': expected_chapters,
-                'confidence_scores': [c.confidence_score for c in parsed.chapters],
-                'detection_methods': list(set(c.detection_method for c in parsed.chapters)),
-                'average_confidence': parsed.metadata.get('average_confidence', 0),
-                'chapter_titles': [c.title for c in parsed.chapters],
-                'warnings': [],
-                'recommendations': []
-            }
-
-            # 检查预期章节数量
-            if expected_chapters and expected_chapters != len(parsed.chapters):
-                validation_result['warnings'].append(
-                    f"检测章节数({len(parsed.chapters)})与预期({expected_chapters})不符"
-                )
-
-            # 检查置信度
-            low_confidence_chapters = [c for c in parsed.chapters if c.confidence_score < 0.7]
-            if low_confidence_chapters:
-                validation_result['warnings'].append(
-                    f"发现{len(low_confidence_chapters)}个低置信度章节"
-                )
-                validation_result['recommendations'].append(
-                    "建议手动检查低置信度章节的准确性"
-                )
-
-            # 检查检测方法多样性
-            if len(set(c.detection_method for c in parsed.chapters)) > 2:
-                validation_result['recommendations'].append(
-                    "检测方法多样，建议统一章节标记格式"
-                )
-
-            return validation_result
-
-        except Exception as e:
-            return {
-                'is_valid': False,
-                'error': str(e),
-                'warnings': [],
-                'recommendations': ["请检查文本格式和内容"]
-            }
-
 
 # 全局实例
 text_parser_service = TextParserService()
@@ -615,6 +451,5 @@ __all__ = [
     'ChapterDetection',
     'ParsedContent',
     'RegexChapterDetector',
-    'TextSplitter',
     'text_parser_service'
 ]

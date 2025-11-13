@@ -1,14 +1,16 @@
 """
-文件处理工具 - 支持多种文档格式的文件处理
+文件处理工具 - 支持多种文档格式的文件处理和验证
+整合了文件验证功能，保持代码简洁和功能完整
 """
 
 import hashlib
-import magic
-import aiofiles
 import tempfile
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
-from fastapi import UploadFile, HTTPException
+from typing import Any, Dict, Optional, Tuple
+
+import aiofiles
+import magic
+from fastapi import UploadFile
 
 from src.core.logging import get_logger
 
@@ -21,7 +23,7 @@ class FileProcessingError(Exception):
 
 
 class FileHandler:
-    """文件处理器 - 按照specification规范实现"""
+    """文件处理器 - 整合了文件验证和处理功能"""
 
     # 支持的文件类型和MIME类型映射
     SUPPORTED_MIME_TYPES = {
@@ -41,12 +43,91 @@ class FileHandler:
         '.epub': 'epub',
     }
 
-    # 最大文件大小 (50MB)
-    MAX_FILE_SIZE = 50 * 1024 * 1024
+    # 文件类型配置（整合自validators.py的有用配置）
+    FILE_TYPE_CONFIG = {
+        'txt': {
+            'mime_types': ['text/plain'],
+            'extensions': ['.txt'],
+            'max_size': 50 * 1024 * 1024,  # 50MB
+            'description': '纯文本文档'
+        },
+        'md': {
+            'mime_types': ['text/markdown', 'text/plain'],
+            'extensions': ['.md', '.markdown'],
+            'max_size': 50 * 1024 * 1024,  # 50MB
+            'description': 'Markdown文档'
+        },
+        'docx': {
+            'mime_types': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            'extensions': ['.docx'],
+            'max_size': 100 * 1024 * 1024,  # 100MB
+            'description': 'Word文档'
+        },
+        'epub': {
+            'mime_types': ['application/epub+zip'],
+            'extensions': ['.epub'],
+            'max_size': 200 * 1024 * 1024,  # 200MB
+            'description': 'EPUB电子书'
+        }
+    }
+
+    # 危险文件扩展名黑名单（来自validators.py）
+    DANGEROUS_EXTENSIONS = {
+        '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
+        '.app', '.deb', '.pkg', '.dmg', '.rpm', '.msi', '.dll', '.so', '.dylib'
+    }
+
+    # 危险MIME类型黑名单（来自validators.py）
+    DANGEROUS_MIME_TYPES = {
+        'application/x-executable',
+        'application/x-msdownload',
+        'application/x-msdos-program',
+        'application/x-shellscript',
+        'application/javascript',
+        'application/x-java-archive'
+    }
+
+    @classmethod
+    def validate_filename(cls, filename: str) -> bool:
+        """验证文件名是否安全有效（来自validators.py）"""
+        if not filename:
+            return False
+
+        # 检查非法字符
+        illegal_chars = ['<', '>', ':', '"', '|', '?', '*', '\x00']
+        for char in illegal_chars:
+            if char in filename:
+                return False
+
+        # 检查长度
+        if len(filename) > 255:
+            return False
+
+        # 检查保留名称（Windows）
+        reserved_names = ['CON', 'PRN', 'AUX', 'NUL'] + [f'COM{i}' for i in range(1, 10)] + [f'LPT{i}' for i in range(1, 10)]
+        name_without_ext = Path(filename).stem.upper()
+        if name_without_ext in reserved_names:
+            return False
+
+        return True
+
+    @classmethod
+    def validate_file_security(cls, filename: str, mime_type: Optional[str] = None) -> Optional[str]:
+        """验证文件安全性（来自validators.py）"""
+        file_ext = Path(filename).suffix.lower()
+
+        # 检查危险扩展名
+        if file_ext in cls.DANGEROUS_EXTENSIONS:
+            return f"危险文件类型: {file_ext}"
+
+        # 检查危险MIME类型
+        if mime_type and mime_type in cls.DANGEROUS_MIME_TYPES:
+            return f"危险文件类型: {mime_type}"
+
+        return None
 
     @classmethod
     def get_file_type_from_extension(cls, filename: str) -> Optional[str]:
-        """从文件扩展名获取文件类型 - 按照specification规范实现"""
         if not filename:
             return None
 
@@ -61,7 +142,7 @@ class FileHandler:
     @classmethod
     async def validate_file(cls, file: UploadFile) -> Tuple[str, Dict[str, Any]]:
         """
-        验证上传的文件
+        验证上传的文件 - 整合了安全检查和类型验证
 
         Args:
             file: 上传的文件
@@ -75,13 +156,14 @@ class FileHandler:
         if not file.filename:
             raise FileProcessingError("文件名不能为空")
 
+        # 验证文件名安全性
+        if not cls.validate_filename(file.filename):
+            raise FileProcessingError("文件名包含非法字符或不符合规范")
+
         # 检查文件大小
         file.file.seek(0, 2)  # 移动到文件末尾
         file_size = file.file.tell()
         file.file.seek(0)  # 重置到文件开头
-
-        if file_size > cls.MAX_FILE_SIZE:
-            raise FileProcessingError(f"文件大小超过限制，最大允许 {cls.MAX_FILE_SIZE // (1024*1024)}MB")
 
         if file_size == 0:
             raise FileProcessingError("文件不能为空")
@@ -90,6 +172,14 @@ class FileHandler:
         file_type_ext = cls.get_file_type_from_extension(file.filename)
         if not file_type_ext:
             raise FileProcessingError(f"不支持的文件扩展名: {Path(file.filename).suffix}")
+
+        # 检查文件类型大小限制
+        file_config = cls.FILE_TYPE_CONFIG.get(file_type_ext)
+        if file_config and file_size > file_config['max_size']:
+            max_size_mb = file_config['max_size'] // (1024 * 1024)
+            raise FileProcessingError(
+                f"文件大小超过{file_config['description']}限制，最大允许 {max_size_mb}MB"
+            )
 
         # 读取文件开头用于MIME类型检测
         file_content = file.file.read(1024)
@@ -101,7 +191,13 @@ class FileHandler:
             file_type_mime = cls.get_file_type_from_mime(mime_type)
         except Exception as e:
             logger.warning(f"MIME类型检测失败: {e}")
+            mime_type = None
             file_type_mime = None
+
+        # 安全检查
+        security_error = cls.validate_file_security(file.filename, mime_type)
+        if security_error:
+            raise FileProcessingError(security_error)
 
         # 验证文件类型一致性
         if file_type_mime and file_type_mime != file_type_ext:
@@ -125,6 +221,7 @@ class FileHandler:
             'detected_mime': mime_type,
             'file_type': file_type,
             'file_hash': file_hash,
+            'description': file_config['description'] if file_config else '',
         }
 
         return file_type, file_info
@@ -172,13 +269,13 @@ class FileHandler:
         return file_path, Path(file.filename).name
 
 
-class TextFileHandler:
-    """文本文件处理器"""
+class TextFileReader:
+    """纯粹的文本文件读取器 - 单一职责：只负责文件读取"""
 
     @staticmethod
-    async def read_text_file(file_path: str, encoding: str = 'utf-8') -> str:
+    async def read_file(file_path: str, encoding: str = 'utf-8') -> str:
         """
-        读取文本文件
+        读取文本文件内容
 
         Args:
             file_path: 文件路径
@@ -186,6 +283,9 @@ class TextFileHandler:
 
         Returns:
             文件内容
+
+        Raises:
+            FileProcessingError: 文件读取失败
         """
         try:
             async with aiofiles.open(file_path, 'r', encoding=encoding) as f:
@@ -204,42 +304,25 @@ class TextFileHandler:
 
             raise FileProcessingError("无法解码文件内容，尝试了多种编码格式")
 
-    @staticmethod
-    def count_words(text: str) -> int:
-        """统计字数"""
-        # 简单的中文字数统计
-        import re
-        # 移除HTML标签和特殊字符
-        clean_text = re.sub(r'<[^>]+>', '', text)
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', ' ', clean_text)
 
-        # 分别计算中文字符和英文单词
-        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', clean_text))
-        english_words = len(re.findall(r'\b[a-zA-Z]+\b', clean_text))
-
-        return chinese_chars + english_words
-
-    @staticmethod
-    def estimate_paragraphs(text: str) -> int:
-        """估算段落数量"""
-        import re
-        # 按照空白行分割段落
-        paragraphs = re.split(r'\n\s*\n', text.strip())
-        # 过滤空段落
-        return len([p for p in paragraphs if p.strip()])
+# 保持向后兼容的别名
+TextFileHandler = TextFileReader
 
 
-class MarkdownFileHandler:
-    """Markdown文件处理器"""
-
-    @staticmethod
-    async def read_markdown_file(file_path: str) -> str:
-        """读取Markdown文件"""
-        return await TextFileHandler.read_text_file(file_path)
+class MarkdownMetadataExtractor:
+    """Markdown元数据提取器 - 单一职责：只负责提取Markdown元数据"""
 
     @staticmethod
     def extract_metadata(text: str) -> Dict[str, Any]:
-        """提取Markdown元数据"""
+        """
+        提取Markdown元数据
+
+        Args:
+            text: Markdown文本内容
+
+        Returns:
+            元数据字典
+        """
         import re
 
         # 提取标题
@@ -248,29 +331,55 @@ class MarkdownFileHandler:
         # 提取章节标题（# 和 ## 级别）
         chapter_titles = re.findall(r'^#{1,2}\s+(.+)$', text, re.MULTILINE)
 
+        # 提取各级标题统计
+        heading_stats = {}
+        for i in range(1, 7):  # H1-H6
+            heading_pattern = f'^{"#" * i}\\s+(.+)$'
+            headings = re.findall(heading_pattern, text, re.MULTILINE)
+            heading_stats[f'h{i}'] = len(headings)
+
         return {
             'titles': titles,
             'chapters': chapter_titles,
             'title_count': len(titles),
             'chapter_count': len(chapter_titles),
+            'heading_stats': heading_stats,
         }
 
 
-class DocxFileHandler:
-    """Word文档处理器"""
+# 保持向后兼容的别名
+MarkdownFileHandler = type('MarkdownFileHandler', (), {
+    'read_markdown_file': lambda file_path: TextFileReader.read_file(file_path),
+    'extract_metadata': MarkdownMetadataExtractor.extract_metadata,
+})
+
+
+class DocxReader:
+    """Word文档读取器 - 单一职责：只负责读取DOCX文件"""
 
     @staticmethod
-    async def read_docx_file(file_path: str) -> str:
-        """读取Word文档"""
+    async def read_file(file_path: str) -> str:
+        """
+        读取Word文档内容
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            文档文本内容
+
+        Raises:
+            FileProcessingError: 读取失败
+        """
         try:
             from docx import Document
             doc = Document(file_path)
 
             # 提取所有段落文本
-            text = []
+            text_parts = []
             for paragraph in doc.paragraphs:
                 if paragraph.text.strip():
-                    text.append(paragraph.text)
+                    text_parts.append(paragraph.text)
 
             # 提取表格内容
             for table in doc.tables:
@@ -280,17 +389,29 @@ class DocxFileHandler:
                         if cell.text.strip():
                             row_text.append(cell.text)
                     if row_text:
-                        text.append(' | '.join(row_text))
+                        text_parts.append(' | '.join(row_text))
 
-            return '\n\n'.join(text)
+            return '\n\n'.join(text_parts)
         except ImportError:
             raise FileProcessingError("未安装python-docx库，无法处理Word文档")
         except Exception as e:
             raise FileProcessingError(f"读取Word文档失败: {str(e)}")
 
+
+class DocxStructureExtractor:
+    """Word文档结构提取器 - 单一职责：只负责提取DOCX结构"""
+
     @staticmethod
     def extract_structure(file_path: str) -> Dict[str, Any]:
-        """提取Word文档结构"""
+        """
+        提取Word文档结构
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            文档结构信息
+        """
         try:
             from docx import Document
             doc = Document(file_path)
@@ -304,22 +425,47 @@ class DocxFileHandler:
                         'level': int(level),
                     })
 
+            # 统计各种元素
+            paragraph_count = len([p for p in doc.paragraphs if p.text.strip()])
+            table_count = len(doc.tables)
+            heading_count = len(headings)
+
             return {
                 'headings': headings,
-                'heading_count': len(headings),
-                'paragraph_count': len([p for p in doc.paragraphs if p.text.strip()]),
+                'heading_count': heading_count,
+                'paragraph_count': paragraph_count,
+                'table_count': table_count,
+                'structure_valid': heading_count > 0,
             }
         except Exception as e:
             logger.error(f"提取Word文档结构失败: {e}")
             return {}
 
 
-class EpubFileHandler:
-    """EPUB文件处理器"""
+# 保持向后兼容的别名
+DocxFileHandler = type('DocxFileHandler', (), {
+    'read_docx_file': lambda file_path: DocxReader.read_file(file_path),
+    'extract_structure': DocxStructureExtractor.extract_structure,
+})
+
+
+class EpubReader:
+    """EPUB文件读取器 - 单一职责：只负责读取EPUB文件"""
 
     @staticmethod
-    async def read_epub_file(file_path: str) -> str:
-        """读取EPUB文件"""
+    async def read_file(file_path: str) -> str:
+        """
+        读取EPUB文件内容
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            电子书文本内容
+
+        Raises:
+            FileProcessingError: 读取失败
+        """
         try:
             import ebooklib
             from ebooklib import epub
@@ -349,16 +495,28 @@ class EpubFileHandler:
         except Exception as e:
             raise FileProcessingError(f"读取EPUB文件失败: {str(e)}")
 
+
+class EpubMetadataExtractor:
+    """EPUB元数据提取器 - 单一职责：只负责提取EPUB元数据"""
+
     @staticmethod
     def extract_metadata(file_path: str) -> Dict[str, Any]:
-        """提取EPUB元数据"""
+        """
+        提取EPUB元数据
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            电子书元数据
+        """
         try:
             import ebooklib
             from ebooklib import epub
 
             book = epub.read_epub(file_path)
-
             metadata = {}
+
             # 获取基本元数据
             if book.get_metadata('DC', 'title'):
                 metadata['title'] = book.get_metadata('DC', 'title')[0][0]
@@ -366,11 +524,24 @@ class EpubFileHandler:
                 metadata['creator'] = book.get_metadata('DC', 'creator')[0][0]
             if book.get_metadata('DC', 'language'):
                 metadata['language'] = book.get_metadata('DC', 'language')[0][0]
+            if book.get_metadata('DC', 'publisher'):
+                metadata['publisher'] = book.get_metadata('DC', 'publisher')[0][0]
+            if book.get_metadata('DC', 'date'):
+                metadata['date'] = book.get_metadata('DC', 'date')[0][0]
 
             # 统计章节数
             chapters = [item for item in book.get_items()
-                       if item.get_type() == ebooklib.ITEM_DOCUMENT]
+                        if item.get_type() == ebooklib.ITEM_DOCUMENT]
             metadata['chapter_count'] = len(chapters)
+
+            # 统计图片数量
+            images = [item for item in book.get_items()
+                      if item.get_type() == ebooklib.ITEM_IMAGE]
+            metadata['image_count'] = len(images)
+
+            # 验证文件完整性
+            metadata['has_metadata'] = bool(metadata.get('title') or metadata.get('creator'))
+            metadata['structure_valid'] = metadata['chapter_count'] > 0
 
             return metadata
         except Exception as e:
@@ -378,29 +549,69 @@ class EpubFileHandler:
             return {}
 
 
+# 保持向后兼容的别名
+EpubFileHandler = type('EpubFileHandler', (), {
+    'read_epub_file': lambda file_path: EpubReader.read_file(file_path),
+    'extract_metadata': EpubMetadataExtractor.extract_metadata,
+})
+
+
 # 文件处理器工厂
 def get_file_handler(file_type: str):
     """获取对应的文件处理器 - 按照specification规范实现"""
-    handlers = {
-        'txt': TextFileHandler,
-        'md': MarkdownFileHandler,
-        'docx': DocxFileHandler,
-        'epub': EpubFileHandler,
+    readers = {
+        'txt': TextFileReader,
+        'md': TextFileReader,  # Markdown文件也使用文本读取器
+        'docx': DocxReader,
+        'epub': EpubReader,
     }
 
-    handler = handlers.get(file_type)
+    handler = readers.get(file_type)
     if not handler:
         raise FileProcessingError(f"不支持的文件类型: {file_type}")
 
     return handler
 
 
+# 元数据提取器工厂
+def get_metadata_extractor(file_type: str):
+    """获取对应的元数据提取器"""
+    extractors = {
+        'txt': None,  # 纯文本文件没有特殊元数据
+        'md': MarkdownMetadataExtractor,
+        'docx': DocxStructureExtractor,
+        'epub': EpubMetadataExtractor,
+    }
+
+    extractor = extractors.get(file_type)
+    if not extractor:
+        raise FileProcessingError(f"文件类型 {file_type} 不支持元数据提取")
+
+    return extractor
+
+
 __all__ = [
+    # 核心类
     "FileHandler",
+    "FileProcessingError",
+
+    # 文件读取器 (单一职责)
+    "TextFileReader",
+    "DocxReader",
+    "EpubReader",
+
+    # 元数据提取器 (单一职责)
+    "MarkdownMetadataExtractor",
+    "DocxStructureExtractor",
+    "EpubMetadataExtractor",
+
+    # 工厂函数
+    "get_file_handler",
+    "get_metadata_extractor",
+
+    # 向后兼容的别名
     "TextFileHandler",
     "MarkdownFileHandler",
     "DocxFileHandler",
     "EpubFileHandler",
-    "FileProcessingError",
-    "get_file_handler",
 ]

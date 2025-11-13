@@ -18,14 +18,11 @@ from .storage import (
     get_storage_client,
 )
 from .text_utils import (
+    ParagraphSplitter,
     SentenceSplitter,
-    TextAnalyzer,
     SentenceInfo,
-    TextAnalysis,
-    SentenceType,
-    PunctuationMark,
+    paragraph_splitter,
     sentence_splitter,
-    text_analyzer,
 )
 
 __all__ = [
@@ -43,12 +40,9 @@ __all__ = [
     "storage_client",
     "get_storage_client",
     # Text utilities
+    "ParagraphSplitter",
     "SentenceSplitter",
-    "TextAnalyzer",
     "SentenceInfo",
-    "TextAnalysis",
-    "SentenceType",
-    "PunctuationMark",
+    "paragraph_splitter",
     "sentence_splitter",
-    "text_analyzer",
 ]
