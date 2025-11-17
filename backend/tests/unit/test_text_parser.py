@@ -4,7 +4,7 @@
 
 import pytest
 
-from src.services.text_parser import (ParsedContent, RegexChapterDetector, TextParserService)
+from src.services.text_parser import (ChapterDetection, RegexChapterDetector, TextParserService)
 
 
 class TestRegexChapterDetector:
@@ -113,52 +113,7 @@ class TestTextParserService:
         """创建解析服务实例"""
         return TextParserService()
 
-    @pytest.mark.asyncio
-    async def test_parse_document_basic(self, parser_service):
-        """测试基础文档解析"""
-        text = """
-第一章 项目介绍
-
-这是项目的介绍内容。
-
-1.1 项目背景
-项目背景是...
-
-1.2 项目目标
-项目目标是...
-
-第二章 技术实现
-
-这是技术实现的内容。
-        """.strip()
-
-        result = await parser_service.parse_document(text)
-
-        assert isinstance(result, ParsedContent)
-        assert len(result.chapters) >= 1
-        assert len(result.paragraphs) >= 1
-        assert len(result.sentences) >= 1
-        assert result.processing_time > 0
-
-    @pytest.mark.asyncio
-    async def test_parse_document_empty(self, parser_service):
-        """测试空文档解析"""
-        from src.core.exceptions import ValidationError
-        with pytest.raises(ValidationError):
-            await parser_service.parse_document("")
-
-    @pytest.mark.asyncio
-    async def test_parse_document_long_text(self, parser_service):
-        """测试长文档解析"""
-        # 创建一个较长的文档
-        text = "这是第一段。" * 100 + "\n\n" + "这是第二段。" * 100
-
-        result = await parser_service.parse_document(text)
-
-        assert len(result.chapters) >= 1
-        assert len(result.paragraphs) >= 2
-        assert result.processing_time < 10.0  # 应该在10秒内完成
-
+    
     @pytest.mark.asyncio
     async def test_parse_to_models(self, parser_service):
         """测试解析为模型格式"""

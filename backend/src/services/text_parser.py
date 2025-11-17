@@ -22,15 +22,11 @@
 
 严格按照data-model.md规范实现，专注于核心文本解析功能
 """
-
+import asyncio
 import re
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
-
-
-
 
 try:
     from src.core.exceptions import ValidationError
@@ -75,15 +71,6 @@ class ChapterDetection:
     end_position: int
     detection_method: str  # regex, fallback
     confidence_score: float = 0.0
-
-
-@dataclass
-class ParsedContent:
-    """解析结果结构"""
-    chapters: List[ChapterDetection]
-    paragraphs: List[str]
-    sentences: List[str]
-    processing_time: float = 0.0
 
 
 class ChapterDetector(ABC):
@@ -242,72 +229,6 @@ class TextParserService:
             'average_chapters_per_document': 0.0
         }
 
-    async def parse_document(self, text: str, options: Optional[Dict[str, Any]] = None) -> ParsedContent:
-        """
-        解析文档，识别章节、段落和句子
-
-        Args:
-            text: 待解析的文本内容
-            options: 解析选项
-                - min_chapter_length: 最小章节长度（默认1000字符）
-
-        Returns:
-            ParsedContent: 解析结果
-        """
-        start_time = time.time()
-
-        if not text or not text.strip():
-            raise ValidationError("文本内容不能为空")
-
-        options = options or {}
-        min_chapter_length = options.get('min_chapter_length', 1000)
-
-        logger.info(f"开始解析文档，文本长度: {len(text)} 字符")
-
-        # 0. 标准化换行符
-        cleaned_text = text.replace('\r\n', '\n').replace('\r', '\n')
-
-        # 1. 检测章节
-        chapters = self.detector.detect_chapters(cleaned_text)
-
-        # 2. 如果章节太长，尝试进一步分割
-        if len(chapters) == 1 and len(cleaned_text) > min_chapter_length * 2:
-            logger.info("单个章节过长，尝试智能分割")
-            chapters = self._split_long_chapter(cleaned_text)
-
-        # 3. 导入文本分割工具（直接导入，避免依赖问题）
-        from src.utils.text_utils import paragraph_splitter, sentence_splitter
-
-        # 4. 为每个章节分割段落和句子
-        all_paragraphs = []
-        all_sentences = []
-
-        for chapter in chapters:
-            # 分割段落
-            paragraphs = paragraph_splitter.split_into_paragraphs(chapter.content)
-            all_paragraphs.extend(paragraphs)
-
-            # 分割句子
-            for paragraph in paragraphs:
-                sentences = sentence_splitter.split_into_sentences(paragraph)
-                all_sentences.extend(sentences)
-
-        processing_time = time.time() - start_time
-
-        # 5. 更新统计信息
-        self._update_stats(len(chapters))
-
-        result = ParsedContent(
-            chapters=chapters,
-            paragraphs=all_paragraphs,
-            sentences=all_sentences,
-            processing_time=processing_time
-        )
-
-        logger.info(f"文档解析完成: {len(chapters)} 章节, {len(all_paragraphs)} 段落, {len(all_sentences)} 句子, 耗时: {processing_time:.2f}s")
-
-        return result
-
     def _split_long_chapter(self, text: str) -> List[ChapterDetection]:
         """分割过长的章节"""
         # 尝试按照语义边界分割
@@ -387,6 +308,8 @@ class TextParserService:
         """
         解析文本并转换为数据库模型格式
 
+        直接从章节开始解析，逐层构建段落和句子，避免重复解析。
+
         Args:
             project_id: 项目ID
             text: 待解析文本
@@ -395,18 +318,40 @@ class TextParserService:
         Returns:
             (chapters_data, paragraphs_data, sentences_data): 三层数据结构
         """
-        parsed = await self.parse_document(text, options)
+        if not text or not text.strip():
+            raise ValidationError("文本内容不能为空")
+
+        options = options or {}
+        min_chapter_length = options.get('min_chapter_length', 1000)
+
+        logger.info(f"开始解析文档，文本长度: {len(text)} 字符")
+
+        # 0. 标准化换行符
+        cleaned_text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+        # 1. 检测章节
+        chapters = self.detector.detect_chapters(cleaned_text)
+        logger.info(f"检测到 {len(chapters)} 个章节")
+
+        # 2. 如果章节太长，尝试进一步分割
+        if len(chapters) == 1 and len(cleaned_text) > min_chapter_length * 2:
+            logger.info("单个章节过长，尝试智能分割")
+            chapters = self._split_long_chapter(cleaned_text)
+
+        # 3. 导入文本分割工具
+        from src.utils.text_utils import paragraph_splitter, sentence_splitter
 
         chapters_data = []
         paragraphs_data = []
         sentences_data = []
 
-        # 构建章节数据
-        for chapter_detection in parsed.chapters:
+        # 4. 逐个章节处理，建立正确的层次关系
+        for chapter_idx, chapter_detection in enumerate(chapters):
             # 清理章节标题和内容
             cleaned_title = chapter_detection.title.replace('\r\n', '\n').replace('\r', '\n').strip()
             cleaned_content = chapter_detection.content.replace('\r\n', '\n').replace('\r', '\n').strip()
 
+            # 构建章节数据
             chapter_data = {
                 'project_id': project_id,
                 'title': cleaned_title,
@@ -419,26 +364,21 @@ class TextParserService:
             }
             chapters_data.append(chapter_data)
 
-        # 构建段落和句子的映射关系
-        chapter_index = 0
-        paragraph_index = 0
-        sentence_index = 0
-
-        # 导入文本分割工具
-        from src.utils.text_utils import paragraph_splitter, sentence_splitter
-
-        for chapter_idx, chapter_detection in enumerate(parsed.chapters):
-            # 获取当前章节的段落
+            # 分割当前章节的段落
             chapter_paragraphs = paragraph_splitter.split_into_paragraphs(chapter_detection.content)
 
             chapter_sentence_count = 0
+            # 记录当前章节在段落列表中的起始位置
+            chapter_para_start_idx = len(paragraphs_data)
 
+            # 5. 处理当前章节的段落
             for para_idx, paragraph_text in enumerate(chapter_paragraphs):
                 # 清理段落文本
                 cleaned_paragraph = paragraph_text.replace('\r\n', '\n').replace('\r', '\n').strip()
 
+                # 构建段落数据
                 paragraph_data = {
-                    'chapter_id': None,  # 在保存后设置
+                    'chapter_id': None,  # 保存数据库后设置
                     'content': cleaned_paragraph,
                     'order_index': para_idx + 1,
                     'word_count': len(cleaned_paragraph),
@@ -447,17 +387,22 @@ class TextParserService:
                 }
                 paragraphs_data.append(paragraph_data)
 
-                # 获取当前段落的句子
+                # 分割当前段落的句子
                 paragraph_sentences = sentence_splitter.split_into_sentences(cleaned_paragraph)
                 chapter_sentence_count += len(paragraph_sentences)
                 paragraph_data['sentence_count'] = len(paragraph_sentences)
 
+                # 记录当前段落在句子列表中的起始位置
+                para_sent_start_idx = len(sentences_data)
+
+                # 6. 处理当前段落的句子
                 for sent_idx, sentence_text in enumerate(paragraph_sentences):
                     # 清理句子文本
                     cleaned_sentence = sentence_text.replace('\r\n', '\n').replace('\r', '\n').strip()
 
+                    # 构建句子数据
                     sentence_data = {
-                        'paragraph_id': None,  # 在保存后设置
+                        'paragraph_id': None,  # 保存数据库后设置
                         'content': cleaned_sentence,
                         'order_index': sent_idx + 1,
                         'word_count': len(cleaned_sentence),
@@ -465,14 +410,13 @@ class TextParserService:
                         'status': SentenceStatus.PENDING.value,
                     }
                     sentences_data.append(sentence_data)
-                    sentence_index += 1
 
-                paragraph_index += 1
-
-            # 更新章节数据
+            # 7. 更新章节数据的统计信息
             chapters_data[chapter_idx]['paragraph_count'] = len(chapter_paragraphs)
             chapters_data[chapter_idx]['sentence_count'] = chapter_sentence_count
-            chapter_index += 1
+
+        # 8. 更新统计信息
+        self._update_stats(len(chapters))
 
         logger.info(f"解析完成: {len(chapters_data)} 章节, {len(paragraphs_data)} 段落, {len(sentences_data)} 句子")
 
@@ -489,7 +433,24 @@ text_parser_service = TextParserService()
 __all__ = [
     'TextParserService',
     'ChapterDetection',
-    'ParsedContent',
     'RegexChapterDetector',
     'text_parser_service'
 ]
+
+if __name__ == "__main__":
+    # 简单测试
+
+    async def main():
+        from src.utils.file_handlers import get_file_handler
+        handler = get_file_handler("txt")
+        file_content = await handler.read_file("./docs/庆余年.txt")
+
+        # 测试 parse_to_models 方法
+        chapters_data, paragraphs_data, sentences_data = await text_parser_service.parse_to_models(
+            "test-project-id", file_content
+        )
+
+        print(f"解析完成: {len(chapters_data)} 章节, {len(paragraphs_data)} 段落, {len(sentences_data)} 句子")
+
+
+    asyncio.run(main())

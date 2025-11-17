@@ -49,6 +49,7 @@ dependencies = [
     "ebooklib>=0.20",
     "beautifulsoup4>=4.14.2",
     "python-docx>=1.2.0",
+    "langchain-text-splitters>=1.0.0",
 ]
 requires-python = ">=3.11"
 readme = "README.md"

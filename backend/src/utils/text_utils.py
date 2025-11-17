@@ -8,6 +8,8 @@ import re
 from dataclasses import dataclass
 from typing import List
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 try:
     from src.core.logging import get_logger
 except ImportError:
@@ -33,6 +35,9 @@ class SentenceInfo:
 class ParagraphSplitter:
     """段落分割器 - 委托给file_handlers.py以避免重复代码"""
 
+    def __init__(self):
+        self.splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=0)
+
     @staticmethod
     def split_into_paragraphs(text: str) -> List[str]:
         """
@@ -41,6 +46,7 @@ class ParagraphSplitter:
         """
         if not text:
             return []
+
         return [p.strip() for p in text.split('\n\n') if p.strip()]
 
 
@@ -83,39 +89,6 @@ class SentenceSplitter:
         sentences = self._post_process_sentences(sentences)
 
         return sentences
-
-    def split_sentences_with_info(self, text: str) -> List[SentenceInfo]:
-        """分割句子并返回详细信息"""
-        if not text or not text.strip():
-            return []
-
-        sentences = self.split_into_sentences(text)
-        sentence_infos = []
-        current_pos = 0
-
-        for sentence in sentences:
-            # 找到句子在原文中的位置
-            start_pos = text.find(sentence, current_pos)
-            if start_pos == -1:
-                # 如果找不到，使用当前位置
-                start_pos = current_pos
-
-            end_pos = start_pos + len(sentence)
-
-            sentence_info = SentenceInfo(
-                text=sentence,
-                start_pos=start_pos,
-                end_pos=end_pos,
-                length=len(sentence),
-                word_count=self._count_words(sentence),
-                character_count=len(sentence)
-            )
-
-            if sentence_info:
-                sentence_infos.append(sentence_info)
-                current_pos = end_pos
-
-        return sentence_infos
 
     def _preprocess_text(self, text: str) -> str:
         """预处理文本"""
