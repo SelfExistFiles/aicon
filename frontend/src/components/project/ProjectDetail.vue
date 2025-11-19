@@ -134,8 +134,10 @@
           编辑项目
         </el-button>
         <el-button
+          type="primary"
           :icon="Document"
           @click="handleManageChapters"
+          style="color: white !important; background-color: #409eff !important; border-color: #409eff !important; border-radius: 8px; font-weight: 600; cursor: pointer;"
         >
           章节管理
         </el-button>
@@ -148,7 +150,7 @@
           开始视频生成
         </el-button>
 
-  
+
         <!-- 危险操作 -->
         <el-button
           v-if="projectsStore.isArchivable(project)"
@@ -203,498 +205,546 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import {
-  ArrowLeft,
-  VideoPlay,
-  Edit,
-  Lock,
-  Refresh,
-  RefreshRight,
-  Document
-} from '@element-plus/icons-vue'
-import { useProjectsStore } from '@/stores/projects'
+  import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+  import { useRouter } from 'vue-router'
+  import { ElMessage } from 'element-plus'
+  import {
+    ArrowLeft,
+    VideoPlay,
+    Edit,
+    Lock,
+    Refresh,
+    RefreshRight,
+    Document
+  } from '@element-plus/icons-vue'
+  import { useProjectsStore } from '@/stores/projects'
 
-// Props定义
-const props = defineProps({
-  projectId: {
-    type: String,
-    required: true
-  },
-  project: {
-    type: Object,
-    default: null
-  },
-  loading: {
-    type: Boolean,
-    default: false
-  },
-  error: {
-    type: String,
-    default: null
-  }
-})
-
-// Router和Store实例
-const router = useRouter()
-const projectsStore = useProjectsStore()
-
-// Emits定义
-const emit = defineEmits([
-  'back',
-  'refresh',
-  'start-generation',
-  'edit',
-  'archive',
-  'reprocess'
-])
-
-// 响应式数据
-const refreshing = ref(false)
-
-// 状态轮询
-const pollingInterval = ref(null)
-
-// 方法
-const handleBack = () => {
-  emit('back')
-}
-
-const handleManageChapters = () => {
-
-  const targetRoute = `/projects/${props.projectId}/chapters`
-  console.log('目标路由:', targetRoute)
-
-  // 直接进行路由跳转
-  router.push(targetRoute).then(() => {
-    console.log('路由跳转成功')
+  // Props定义
+  const props = defineProps({
+    projectId: {
+      type: String,
+      required: true
+    },
+    project: {
+      type: Object,
+      default: null
+    },
+    loading: {
+      type: Boolean,
+      default: false
+    },
+    error: {
+      type: String,
+      default: null
+    }
   })
-}
 
-const handleStartGeneration = () => {
-  if (!['completed', 'parsed'].includes(props.project.status)) {
-    ElMessage.warning('文件处理完成后才能开始视频生成')
-    return
-  }
-  emit('start-generation', props.project)
-}
+  // Router和Store实例
+  const router = useRouter()
+  const projectsStore = useProjectsStore()
 
-const handleRefresh = async () => {
-  refreshing.value = true
-  try {
-    emit('refresh', props.projectId)
-  } finally {
-    setTimeout(() => {
-      refreshing.value = false
-    }, 1000)
-  }
-}
+  // Emits定义
+  const emit = defineEmits([
+    'back',
+    'refresh',
+    'start-generation',
+    'edit',
+    'archive',
+    'reprocess'
+  ])
 
-const handleEdit = () => {
-  emit('edit', props.project)
-}
+  // 响应式数据
+  const refreshing = ref(false)
+  const internalProject = ref(null)
+  const internalLoading = ref(false)
+  const internalError = ref(null)
 
-const handleArchive = async () => {
-  emit('archive', props.project)
-}
+  // 状态轮询
+  const pollingInterval = ref(null)
 
-const handleReprocess = () => {
-  emit('reprocess', props.project)
+  // 计算属性：使用传入的props或内部数据
+  const project = computed(() => props.project || internalProject.value)
+  const loading = computed(() => props.loading || internalLoading.value)
+  const error = computed(() => props.error || internalError.value)
 
-  // 重试后重新开始状态轮询
-  setTimeout(() => {
-    startStatusPolling()
-  }, 1000) // 延迟1秒后开始轮询，确保状态已更新
-}
-
-// 状态轮询相关方法
-const startStatusPolling = () => {
-  // 清理已有的轮询
-  stopStatusPolling()
-
-  // 只有在处理中的状态才进行轮询
-  if (!props.project || !['uploaded', 'parsing', 'generating'].includes(props.project.status)) {
-    return
-  }
-
-  // 立即查询一次状态
-  pollProjectStatus()
-
-  // 设置定时轮询
-  pollingInterval.value = setInterval(() => {
-    pollProjectStatus()
-  }, 3000) // 每3秒轮询一次
-}
-
-const stopStatusPolling = () => {
-  if (pollingInterval.value) {
-    clearInterval(pollingInterval.value)
-    pollingInterval.value = null
-  }
-}
-
-const pollProjectStatus = async () => {
-  try {
-    const statusResponse = await projectsStore.fetchProjectStatus(props.projectId)
-
-    // 如果处理完成或失败，停止轮询
-    const finalStatuses = ['parsed', 'completed', 'failed', 'archived']
-    if (finalStatuses.includes(statusResponse.project.status)) {
-      stopStatusPolling()
-      // 发出刷新事件，让父组件更新项目数据
-      emit('refresh', props.projectId)
+  // 获取项目数据的函数
+  const fetchProjectData = async () => {
+    if (props.project) {
+      // 如果已经传入了project数据，不需要再获取
+      return
     }
 
-  } catch (error) {
-    console.error('轮询项目状态失败:', error)
-    // 轮询失败不显示错误，避免打扰用户
+    internalLoading.value = true
+    internalError.value = null
+
+    try {
+      console.log('正在获取项目数据，projectId:', props.projectId)
+      internalProject.value = await projectsStore.getProject(props.projectId)
+      console.log('项目数据获取成功:', internalProject.value)
+    } catch (err) {
+      console.error('获取项目数据失败:', err)
+      internalError.value = '加载项目数据失败'
+      ElMessage.error('加载项目数据失败')
+    } finally {
+      internalLoading.value = false
+    }
   }
-}
 
-// 生命周期和监听器
-onMounted(() => {
-  // 组件挂载时开始状态轮询
-  startStatusPolling()
-})
+  // 方法
+  const handleBack = () => {
+    if (props.project) {
+      // 如果有父组件，使用emit
+      emit('back')
+    } else {
+      // 如果是独立路由，导航回项目列表
+      router.push('/projects')
+    }
+  }
 
-onUnmounted(() => {
-  // 组件卸载时清理轮询
-  stopStatusPolling()
-})
+  const handleManageChapters = () => {
+    if (!props.projectId) {
+      console.error('projectId 为空')
+      ElMessage.error('项目ID丢失，请重新进入页面')
+      return
+    }
+    const targetRoute = `/projects/${props.projectId}/chapters`
+    router.push(targetRoute).then(() => {
+      console.log('路由跳转成功')
+    })
+  }
 
-// 监听项目变化，重新开始轮询
-watch(() => props.project, (newProject) => {
-  if (newProject) {
+  const handleStartGeneration = () => {
+    if (!['completed', 'parsed'].includes(props.project.status)) {
+      ElMessage.warning('文件处理完成后才能开始视频生成')
+      return
+    }
+    emit('start-generation', props.project)
+  }
+
+  const handleRefresh = async () => {
+    refreshing.value = true
+    try {
+      if (props.project) {
+        // 如果有父组件，使用emit
+        emit('refresh', props.projectId)
+      } else {
+        // 如果是独立路由，重新获取数据
+        await fetchProjectData()
+      }
+    } finally {
+      setTimeout(() => {
+        refreshing.value = false
+      }, 1000)
+    }
+  }
+
+  const handleEdit = () => {
+    emit('edit', props.project)
+  }
+
+  const handleArchive = async () => {
+    emit('archive', props.project)
+  }
+
+  const handleReprocess = () => {
+    emit('reprocess', props.project)
+
+    // 重试后重新开始状态轮询
+    setTimeout(() => {
+      startStatusPolling()
+    }, 1000) // 延迟1秒后开始轮询，确保状态已更新
+  }
+
+  // 状态轮询相关方法
+  const startStatusPolling = () => {
+    // 清理已有的轮询
+    stopStatusPolling()
+
+    // 只有在处理中的状态才进行轮询
+    if (!props.project || !['uploaded', 'parsing', 'generating'].includes(props.project.status)) {
+      return
+    }
+
+    // 立即查询一次状态
+    pollProjectStatus()
+
+    // 设置定时轮询
+    pollingInterval.value = setInterval(() => {
+      pollProjectStatus()
+    }, 3000) // 每3秒轮询一次
+  }
+
+  const stopStatusPolling = () => {
+    if (pollingInterval.value) {
+      clearInterval(pollingInterval.value)
+      pollingInterval.value = null
+    }
+  }
+
+  const pollProjectStatus = async () => {
+    try {
+      const statusResponse = await projectsStore.fetchProjectStatus(props.projectId)
+
+      // 如果处理完成或失败，停止轮询
+      const finalStatuses = ['parsed', 'completed', 'failed', 'archived']
+      if (finalStatuses.includes(statusResponse.project.status)) {
+        stopStatusPolling()
+        // 发出刷新事件，让父组件更新项目数据
+        emit('refresh', props.projectId)
+      }
+
+    } catch (error) {
+      console.error('轮询项目状态失败:', error)
+      // 轮询失败不显示错误，避免打扰用户
+    }
+  }
+
+  // 生命周期和监听器
+  onMounted(async () => {
+    // 先获取项目数据
+    await fetchProjectData()
+    // 然后开始状态轮询
     startStatusPolling()
-  }
-}, { immediate: true })
+  })
 
-// 监听projectId变化
-watch(() => props.projectId, () => {
-  startStatusPolling()
-})
+  onUnmounted(() => {
+    // 组件卸载时清理轮询
+    stopStatusPolling()
+  })
 
-// 使用store中的工具方法，避免重复代码
+  // 监听项目变化，重新开始轮询
+  watch(() => project.value, (newProject) => {
+    if (newProject) {
+      startStatusPolling()
+    }
+  }, { immediate: true })
+
+  // 监听projectId变化
+  watch(() => props.projectId, async () => {
+    // projectId变化时重新获取数据
+    await fetchProjectData()
+    startStatusPolling()
+  })
+
+  // 使用store中的工具方法，避免重复代码
 </script>
 
 <style scoped>
-.project-detail {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-  padding: var(--space-lg);
-}
-
-.loading-container {
-  padding: var(--space-xl);
-}
-
-.detail-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md);
-  background: var(--bg-primary);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.page-title {
-  font-size: var(--text-xl);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-  flex: 1;
-}
-
-/* 卡片样式 */
-:deep(.el-card) {
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-  box-shadow: var(--shadow-md);
-  overflow: hidden;
-}
-
-:deep(.el-card__header) {
-  padding: var(--space-xl);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.02), rgba(139, 92, 246, 0.02));
-  border-bottom: 1px solid var(--border-primary);
-}
-
-:deep(.el-card__body) {
-  padding: var(--space-xl);
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.card-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.status-tags {
-  display: flex;
-  gap: var(--space-sm);
-  align-items: center;
-}
-
-/* 内容区块样式 */
-.file-info-section,
-.content-stats,
-.info-section {
-  margin-bottom: var(--space-xl);
-  padding: var(--space-lg);
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-}
-
-.file-info-section h3,
-.content-stats h3,
-.info-section h3 {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 var(--space-lg) 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.file-info-section h3::before,
-.content-stats h3::before,
-.info-section h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: linear-gradient(180deg, var(--primary-color), var(--primary-hover));
-  border-radius: var(--radius-sm);
-}
-
-/* 统计信息样式 */
-.stat-item {
-  text-align: center;
-  padding: var(--space-lg);
-  background: var(--bg-primary);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-  margin-bottom: var(--space-md);
-  transition: all var(--transition-fast);
-}
-
-.stat-item:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--primary-color);
-}
-
-.stat-value {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  color: var(--primary-color);
-  margin-bottom: var(--space-sm);
-  line-height: 1;
-}
-
-.stat-label {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* 进度卡片样式 */
-.progress-card {
-  padding: var(--space-xl);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
-  border-radius: var(--radius-lg);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  text-align: center;
-  margin-bottom: var(--space-lg);
-  position: relative;
-}
-
-.progress-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--primary-color), var(--primary-hover));
-}
-
-.progress-card h3 {
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 var(--space-md) 0;
-}
-
-.progress-text {
-  margin-top: var(--space-sm);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-/* 描述列表样式 */
-:deep(.el-descriptions) {
-  --el-descriptions-table-border: 1px solid var(--border-primary);
-  --el-descriptions-item-bordered-background: var(--bg-secondary);
-}
-
-:deep(.el-descriptions__label) {
-  font-weight: 500;
-  color: var(--text-primary);
-  background: var(--bg-secondary);
-}
-
-:deep(.el-descriptions__content) {
-  color: var(--text-secondary);
-}
-
-/* 操作按钮样式 */
-.action-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-md);
-  justify-content: center;
-  align-items: center;
-  padding: var(--space-xl);
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-  margin-top: var(--space-lg);
-}
-
-.action-buttons .el-button {
-  border-radius: var(--radius-lg);
-  font-weight: 600;
-  padding: var(--space-md) var(--space-lg);
-  min-width: 120px;
-  transition: all var(--transition-base);
-}
-
-.action-buttons .el-button--primary {
-  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
-  border: none;
-  box-shadow: var(--shadow-md);
-}
-
-.action-buttons .el-button--primary:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
-
-.action-buttons .el-button--default {
-  border-color: var(--border-primary);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-.action-buttons .el-button--default:hover {
-  border-color: var(--primary-color);
-  background: rgba(99, 102, 241, 0.05);
-  transform: translateY(-1px);
-}
-
-.action-buttons .el-button--info {
-  background: linear-gradient(135deg, var(--info-color), var(--info-hover));
-  border: none;
-  box-shadow: var(--shadow-md);
-  font-size: var(--text-base);
-  padding: var(--space-md) var(--space-xl);
-}
-
-.action-buttons .el-button--info:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
-
-.mr-1 {
-  margin-right: var(--space-xs);
-}
-
-/* 错误状态样式 */
-.error-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  padding: var(--space-xl);
-  background: var(--bg-primary);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
   .project-detail {
-    padding: var(--space-md);
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    padding: var(--space-lg);
+  }
+
+  .loading-container {
+    padding: var(--space-xl);
+  }
+
+  .detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
   }
 
   .detail-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
     padding: var(--space-md);
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .page-title {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+    flex: 1;
+  }
+
+  /* 卡片样式 */
+  :deep(.el-card) {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
   }
 
   :deep(.el-card__header) {
-    padding: var(--space-lg);
+    padding: var(--space-xl);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.02), rgba(139, 92, 246, 0.02));
+    border-bottom: 1px solid var(--border-primary);
   }
 
   :deep(.el-card__body) {
-    padding: var(--space-lg);
+    padding: var(--space-xl);
   }
 
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .card-title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .status-tags {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+  }
+
+  /* 内容区块样式 */
   .file-info-section,
   .content-stats,
   .info-section {
-    padding: var(--space-md);
-    margin-bottom: var(--space-lg);
+    margin-bottom: var(--space-xl);
+    padding: var(--space-lg);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-primary);
   }
 
+  .file-info-section h3,
+  .content-stats h3,
+  .info-section h3 {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 var(--space-lg) 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  .file-info-section h3::before,
+  .content-stats h3::before,
+  .info-section h3::before {
+    content: '';
+    width: 4px;
+    height: 20px;
+    background: linear-gradient(180deg, var(--primary-color), var(--primary-hover));
+    border-radius: var(--radius-sm);
+  }
+
+  /* 统计信息样式 */
   .stat-item {
-    padding: var(--space-md);
+    text-align: center;
+    padding: var(--space-lg);
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-primary);
+    margin-bottom: var(--space-md);
+    transition: all var(--transition-fast);
+  }
+
+  .stat-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-color);
   }
 
   .stat-value {
-    font-size: var(--text-lg);
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: var(--space-sm);
+    line-height: 1;
   }
 
+  .stat-label {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* 进度卡片样式 */
   .progress-card {
-    padding: var(--space-lg);
+    padding: var(--space-xl);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    text-align: center;
+    margin-bottom: var(--space-lg);
+    position: relative;
   }
 
+  .progress-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--primary-color), var(--primary-hover));
+  }
+
+  .progress-card h3 {
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 var(--space-md) 0;
+  }
+
+  .progress-text {
+    margin-top: var(--space-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  /* 描述列表样式 */
+  :deep(.el-descriptions) {
+    --el-descriptions-table-border: 1px solid var(--border-primary);
+    --el-descriptions-item-bordered-background: var(--bg-secondary);
+  }
+
+  :deep(.el-descriptions__label) {
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+  }
+
+  :deep(.el-descriptions__content) {
+    color: var(--text-secondary);
+  }
+
+  /* 操作按钮样式 */
   .action-buttons {
-    flex-direction: column;
-    width: 100%;
-    padding: var(--space-lg);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    justify-content: center;
+    align-items: center;
+    padding: var(--space-xl);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-primary);
+    margin-top: var(--space-lg);
   }
 
   .action-buttons .el-button {
-    width: 100%;
-    min-width: auto;
+    border-radius: var(--radius-lg);
+    font-weight: 600;
+    padding: var(--space-md) var(--space-lg);
+    min-width: 120px;
+    transition: all var(--transition-base);
   }
-}
+
+  .action-buttons .el-button--primary {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+    border: none;
+    box-shadow: var(--shadow-md);
+  }
+
+  .action-buttons .el-button--primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .action-buttons .el-button--default {
+    border-color: var(--border-primary);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
+  .action-buttons .el-button--default:hover {
+    border-color: var(--primary-color);
+    background: rgba(99, 102, 241, 0.05);
+    transform: translateY(-1px);
+  }
+
+  .action-buttons .el-button--info {
+    background: linear-gradient(135deg, var(--info-color), var(--info-hover));
+    border: none;
+    box-shadow: var(--shadow-md);
+    font-size: var(--text-base);
+    padding: var(--space-md) var(--space-xl);
+  }
+
+  .action-buttons .el-button--info:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .mr-1 {
+    margin-right: var(--space-xs);
+  }
+
+  /* 错误状态样式 */
+  .error-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    padding: var(--space-xl);
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-primary);
+  }
+
+  /* 响应式设计 */
+  @media (max-width: 768px) {
+    .project-detail {
+      padding: var(--space-md);
+    }
+
+    .detail-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-sm);
+      padding: var(--space-md);
+    }
+
+    :deep(.el-card__header) {
+      padding: var(--space-lg);
+    }
+
+    :deep(.el-card__body) {
+      padding: var(--space-lg);
+    }
+
+    .file-info-section,
+    .content-stats,
+    .info-section {
+      padding: var(--space-md);
+      margin-bottom: var(--space-lg);
+    }
+
+    .stat-item {
+      padding: var(--space-md);
+    }
+
+    .stat-value {
+      font-size: var(--text-lg);
+    }
+
+    .progress-card {
+      padding: var(--space-lg);
+    }
+
+    .action-buttons {
+      flex-direction: column;
+      width: 100%;
+      padding: var(--space-lg);
+    }
+
+    .action-buttons .el-button {
+      width: 100%;
+      min-width: auto;
+    }
+  }
 </style>

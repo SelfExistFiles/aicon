@@ -522,8 +522,15 @@ const handleBack = () => {
     return
   }
 
+  // 返回到项目详情页面
   const targetRoute = `/projects/${projectId.value}`
-  router.push(targetRoute)
+  console.log('正在返回项目详情页面:', targetRoute)
+  router.push(targetRoute).then(() => {
+    console.log('返回项目详情页面成功')
+  }).catch((error) => {
+    console.error('返回项目详情页面失败:', error)
+    ElMessage.error('返回项目详情页面失败，请手动导航')
+  })
 }
 
 const handleCreateChapter = () => {
