@@ -11,7 +11,6 @@ const Register = () => import('@/views/Register.vue')
 const Dashboard = () => import('@/views/Dashboard.vue')
 const Projects = () => import('@/views/Projects.vue')
 const ProjectDetail = () => import('@/components/project/ProjectDetail.vue')
-const ChapterManagement = () => import('@/views/chapters/ChapterManagement.vue')
 const GenerationQueue = () => import('@/views/GenerationQueue.vue')
 const GenerationSettings = () => import('@/views/GenerationSettings.vue')
 const Publish = () => import('@/views/Publish.vue')
@@ -88,15 +87,9 @@ const routes = [
         props: true
       },
       {
-        path: ':projectId/chapters',
-        name: 'ChapterManagement',
-        component: ChapterManagement,
-        props: true
-      },
-      {
-        path: ':projectId/chapters/:chapterId/paragraphs',
-        name: 'ParagraphManagement',
-        component: () => import('@/views/chapters/ParagraphManagement.vue'),
+        path: ':projectId/studio',
+        name: 'ContentStudio',
+        component: () => import('@/views/studio/ContentStudio.vue'),
         props: true
       }
     ]

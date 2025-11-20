@@ -135,10 +135,10 @@
         </el-button>
         <el-button
           type="primary"
-          :icon="Document"
-          @click="handleManageChapters"
+          :icon="Edit"
+          @click="handleOpenStudio"
         >
-          章节管理
+          进入内容工坊
         </el-button>
         <el-button
           v-if="['completed', 'parsed'].includes(project.status)"
@@ -220,6 +220,8 @@
 </template>
 
 <script setup>
+  import { useRouter } from 'vue-router'
+  const router = useRouter()
   import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
   import { useProjectsStore } from '@/stores/projects'
   import { useProject } from '@/composables/useProject'
@@ -289,6 +291,14 @@
     handleStartGeneration,
     handleManageChapters
   } = useProject(projectIdRef, emitRef)
+
+  // 进入内容工坊
+  const handleOpenStudio = () => {
+    router.push({
+      name: 'ContentStudio',
+      params: { projectId: props.projectId }
+    })
+  }
 
   // 获取项目数据的函数
   const fetchProjectData = async () => {

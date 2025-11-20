@@ -29,10 +29,26 @@
 
     <!-- 空状态 -->
     <div v-else-if="!loading && projects.length === 0" class="empty-state">
-      <el-empty
-        :description="'还没有项目，点击导航栏中的「新建项目」按钮开始吧！'"
-        :image-size="120"
-      />
+      <el-empty :image-size="160">
+        <template #image>
+          <el-icon :size="120" class="empty-icon">
+            <FolderOpened />
+          </el-icon>
+        </template>
+        <template #description>
+          <div class="empty-description">
+            <h3>还没有项目</h3>
+            <p>创建您的第一个项目，开始AI内容生成之旅</p>
+            <p class="empty-hint">上传文本文件，系统将自动解析章节和段落</p>
+          </div>
+        </template>
+        <template #default>
+          <el-button type="primary" size="large" @click="$emit('create-project')">
+            <el-icon><Plus /></el-icon>
+            创建第一个项目
+          </el-button>
+        </template>
+      </el-empty>
     </div>
 
     <!-- 网格视图 -->
@@ -71,7 +87,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { Grid, List } from '@element-plus/icons-vue'
+import { Grid, List, FolderOpened, Plus } from '@element-plus/icons-vue'
 import ProjectGridView from './ProjectGridView.vue'
 import ProjectTableView from './ProjectTableView.vue'
 
@@ -108,6 +124,7 @@ const emit = defineEmits([
   'page-change',
   'size-change',
   'row-click',
+  'create-project',
 ])
 
 // 响应式数据
@@ -161,10 +178,39 @@ defineExpose({
   background: var(--bg-primary);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-primary);
-  min-height: 300px;
+  min-height: 400px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.empty-icon {
+  color: var(--text-disabled);
+  opacity: 0.5;
+}
+
+.empty-description h3 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: var(--space-md) 0 var(--space-sm) 0;
+}
+
+.empty-description p {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  margin: var(--space-xs) 0;
+  line-height: 1.6;
+}
+
+.empty-hint {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+:deep(.el-empty__bottom) {
+  margin-top: var(--space-lg);
 }
 
 /* 分页样式优化 */
