@@ -410,19 +410,6 @@ grafana_data/
 *.backup
 *~
 
-# Profiling
-*.prof
-*.profile
-
-# Memory dumps
-core
-core.*
-heapdump.*
-
-# Large files
-*.7z
-*.dmg
-*.gz
 *.iso
 *.jar
 *.rar

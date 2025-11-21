@@ -1,0 +1,118 @@
+"""
+句子管理服务 - 负责句子的创建、更新、删除和查询
+"""
+
+from typing import List, Optional
+
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.exceptions import NotFoundError
+from src.core.logging import get_logger
+from src.models.paragraph import Paragraph
+from src.models.sentence import Sentence, SentenceStatus
+from src.services.base import BaseService
+
+logger = get_logger(__name__)
+
+
+class SentenceService(BaseService):
+    """
+    句子管理服务
+    """
+
+    def __init__(self, db_session: Optional[AsyncSession] = None):
+        super().__init__(db_session)
+
+    async def create_sentence(
+            self,
+            paragraph_id: str,
+            content: str,
+            order_index: Optional[int] = None
+    ) -> Sentence:
+        """
+        创建新句子
+        """
+        # 验证段落是否存在
+        paragraph = await self.get(Paragraph, paragraph_id)
+        if not paragraph:
+            raise NotFoundError(
+                "段落不存在",
+                resource_type="paragraph",
+                resource_id=paragraph_id
+            )
+
+        # 如果未指定顺序，则添加到最后
+        if order_index is None:
+            # 获取当前最大顺序
+            result = await self.execute(
+                select(func.max(Sentence.order_index))
+                .where(Sentence.paragraph_id == paragraph_id)
+            )
+            max_order = result.scalar() or 0
+            order_index = max_order + 1
+
+        sentence = Sentence(
+            paragraph_id=paragraph_id,
+            content=content,
+            order_index=order_index,
+            word_count=len(content.replace(' ', '')),
+            character_count=len(content),
+            status=SentenceStatus.PENDING.value
+        )
+
+        await self.add(sentence)
+        await self.commit()
+        await self.refresh(sentence)
+
+        logger.info(f"创建句子成功: ID={sentence.id}, 段落={paragraph_id}")
+        return sentence
+
+    async def get_sentence_by_id(self, sentence_id: str) -> Sentence:
+        """
+        根据ID获取句子
+        """
+        sentence = await self.get(Sentence, sentence_id)
+        if not sentence:
+            raise NotFoundError(
+                "句子不存在",
+                resource_type="sentence",
+                resource_id=sentence_id
+            )
+        return sentence
+
+    async def update_sentence(
+            self,
+            sentence_id: str,
+            content: Optional[str] = None
+    ) -> Sentence:
+        """
+        更新句子内容
+        """
+        sentence = await self.get_sentence_by_id(sentence_id)
+
+        if content is not None and content != sentence.content:
+            sentence.content = content
+            sentence.word_count = len(content.replace(' ', ''))
+            sentence.character_count = len(content)
+            # 重置状态为pending，因为内容变了可能需要重新生成
+            sentence.status = SentenceStatus.PENDING.value
+            sentence.is_manual_edited = True
+
+        await self.commit()
+        await self.refresh(sentence)
+
+        logger.info(f"更新句子成功: ID={sentence_id}")
+        return sentence
+
+    async def delete_sentence(self, sentence_id: str) -> bool:
+        """
+        删除句子
+        """
+        sentence = await self.get_sentence_by_id(sentence_id)
+        
+        await self.delete(sentence)
+        await self.commit()
+
+        logger.info(f"删除句子成功: ID={sentence_id}")
+        return True
