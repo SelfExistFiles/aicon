@@ -664,8 +664,8 @@ if __name__ == "__main__":
     async def main():
         service = ProjectProcessingService()
         # 在这里可以调用服务方法进行测试
-        project_id = "c7b66057-b898-47f3-9a19-cd238ffa2e21"
-        owner_id = "6c11cb2b-d499-4f81-8196-3ea078e9f66a"
+        project_id = "5b2eca57-a4c0-43e3-92cc-e0072c39b8ef"
+        owner_id = "b2a9d2ac-ec7e-4217-8291-b46c123478ea"
         print("Processing file task...")
         res = await service.process_file_task(project_id, owner_id)
         print(res)

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -30,5 +30,14 @@ class SentenceResponse(SentenceBase):
     created_at: datetime
     updated_at: datetime
 
+    class Config:
+        orm_mode = True
+
+
+class SentenceListResponse(BaseModel):
+    """句子列表响应"""
+    data: List[SentenceResponse] = Field(..., description="句子列表")
+    total: int = Field(..., description="总数")
+    
     class Config:
         orm_mode = True

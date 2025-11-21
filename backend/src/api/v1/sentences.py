@@ -2,10 +2,36 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_db
-from src.api.schemas.sentence import SentenceCreate, SentenceResponse, SentenceUpdate
+from src.api.schemas.sentence import SentenceCreate, SentenceResponse, SentenceUpdate, SentenceListResponse
 from src.services.sentence import SentenceService
 
 router = APIRouter()
+
+
+@router.get("/", response_model=SentenceListResponse)
+async def list_sentences(
+    paragraph_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取段落的句子列表
+    
+    Args:
+        paragraph_id: 段落ID
+        
+    Returns:
+        句子列表，按order_index排序
+    """
+    service = SentenceService(db)
+    sentences = await service.get_sentences_by_paragraph(paragraph_id)
+    
+    # Convert ORM objects to dicts for Pydantic v2 compatibility
+    data = [s.to_dict() for s in sentences]
+    
+    return SentenceListResponse(
+        data=data,
+        total=len(sentences)
+    )
 
 
 @router.post("/", response_model=SentenceResponse, status_code=status.HTTP_201_CREATED)

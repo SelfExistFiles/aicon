@@ -87,11 +87,18 @@ class RegexChapterDetector(ChapterDetector):
 
     def __init__(self):
         # 多种章节标记模式，按优先级排序
+        # 优先匹配章节，降低卷/篇的优先级
         self.patterns = [
-            # 阿拉伯数字章节：第1章、第一章、Chapter 1
+            # 章节专用模式 - 最高优先级
             {
-                'pattern': r'^第[一二三四五六七八九十百千万0-9]+[章节回卷篇]',
-                'name': 'chinese_numbered',
+                'pattern': r'^第[一二三四五六七八九十百千万0-9]+章',
+                'name': 'chapter_only',
+                'confidence': 0.95
+            },
+            # 节/回 - 高优先级
+            {
+                'pattern': r'^第[一二三四五六七八九十百千万0-9]+[节回]',
+                'name': 'section',
                 'confidence': 0.9
             },
             # 简单数字章节：1.、2.、3.
@@ -102,7 +109,7 @@ class RegexChapterDetector(ChapterDetector):
             },
             # 数字章节：1. 第一章、1、Chapter 1
             {
-                'pattern': r'^(\d+)\.?\s*(第?[一二三四五六七八九十百千万0-9]*[章节回卷篇]|Chapter\s*\d+|[一二三四五六七八九十百千万]+、)',
+                'pattern': r'^(\d+)\.?\s*(第?[一二三四五六七八九十百千万0-9]*[章节回]|Chapter\s*\d+|[一二三四五六七八九十百千万]+、)',
                 'name': 'numbered',
                 'confidence': 0.85
             },
@@ -118,11 +125,17 @@ class RegexChapterDetector(ChapterDetector):
                 'name': 'simple_numbered',
                 'confidence': 0.7
             },
-            # 括号章节：（一）、[第一卷]
+            # 括号章节：（一）、[第一章]
             {
-                'pattern': r'^[【\(]\s*[第]?[一二三四五六七八九十百千万0-9]+\s*[章节回卷篇]\s*[】\)]',
+                'pattern': r'^[【\(]\s*[第]?[一二三四五六七八九十百千万0-9]+\s*[章节回]\s*[】\)]',
                 'name': 'bracketed',
                 'confidence': 0.75
+            },
+            # 卷/篇 - 最低优先级，可能是分卷标记而非章节
+            {
+                'pattern': r'^第[一二三四五六七八九十百千万0-9]+[卷篇]',
+                'name': 'volume',
+                'confidence': 0.3
             }
         ]
 
@@ -215,6 +228,83 @@ class RegexChapterDetector(ChapterDetector):
             chapter_number += 1
 
         return chapters
+
+    def _filter_and_merge_chapters(self, chapters: List[ChapterDetection], min_content_length: int = 100) -> List[ChapterDetection]:
+        """
+        过滤空章节并合并卷标题
+        
+        处理逻辑：
+        1. 识别空章节（内容长度 < min_content_length）
+        2. 如果是卷/篇标记（只包含卷/篇，不包含章），合并到下一章节的标题中
+        3. 过滤掉空章节
+        4. 重新编号章节
+        
+        Args:
+            chapters: 检测到的章节列表
+            min_content_length: 最小内容长度
+            
+        Returns:
+            过滤和合并后的章节列表
+        """
+        if not chapters:
+            return chapters
+            
+        filtered_chapters = []
+        volume_prefix = ""  # 用于存储卷标题前缀
+        
+        for i, chapter in enumerate(chapters):
+            content_length = len(chapter.content.strip())
+            
+            # 检查是否是卷/篇标记（内容很少且标题包含卷/篇）
+            is_volume_header = (
+                content_length < min_content_length and
+                ('卷' in chapter.title or '篇' in chapter.title) and
+                '章' not in chapter.title and
+                '节' not in chapter.title and
+                '回' not in chapter.title
+            )
+            
+            if is_volume_header:
+                # 保存卷标题作为前缀，用于下一个章节
+                volume_prefix = chapter.title.strip()
+                logger.debug(f"识别到卷标题: {volume_prefix}，将合并到下一章节")
+                continue
+            
+            # 检查是否是空章节（内容太少）
+            if content_length < min_content_length:
+                logger.debug(f"过滤空章节: {chapter.title} (内容长度: {content_length})")
+                continue
+            
+            # 如果有卷前缀，合并到当前章节标题
+            if volume_prefix:
+                merged_title = f"{volume_prefix} {chapter.title}"
+                logger.debug(f"合并标题: {merged_title}")
+                chapter = ChapterDetection(
+                    title=merged_title,
+                    content=chapter.content,
+                    chapter_number=len(filtered_chapters) + 1,
+                    start_position=chapter.start_position,
+                    end_position=chapter.end_position,
+                    detection_method=chapter.detection_method,
+                    confidence_score=chapter.confidence_score
+                )
+                volume_prefix = ""  # 清空前缀
+            else:
+                # 重新编号
+                chapter = ChapterDetection(
+                    title=chapter.title,
+                    content=chapter.content,
+                    chapter_number=len(filtered_chapters) + 1,
+                    start_position=chapter.start_position,
+                    end_position=chapter.end_position,
+                    detection_method=chapter.detection_method,
+                    confidence_score=chapter.confidence_score
+                )
+            
+            filtered_chapters.append(chapter)
+        
+        logger.info(f"章节过滤完成: {len(chapters)} -> {len(filtered_chapters)} 章节")
+        return filtered_chapters
 
 
 class TextParserService:
@@ -332,6 +422,10 @@ class TextParserService:
         # 1. 检测章节
         chapters = self.detector.detect_chapters(cleaned_text)
         logger.info(f"检测到 {len(chapters)} 个章节")
+        
+        # 1.5 过滤和合并章节（移除空章节，合并卷标题）
+        chapters = self.detector._filter_and_merge_chapters(chapters, min_content_length=100)
+        logger.info(f"过滤后剩余 {len(chapters)} 个有效章节")
 
         # 2. 如果章节太长，尝试进一步分割
         if len(chapters) == 1 and len(cleaned_text) > min_chapter_length * 2:

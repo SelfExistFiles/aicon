@@ -105,6 +105,20 @@ class SentenceService(BaseService):
         logger.info(f"更新句子成功: ID={sentence_id}")
         return sentence
 
+    async def get_sentences_by_paragraph(self, paragraph_id: str) -> List[Sentence]:
+        """
+        获取段落的所有句子
+        
+        Args:
+            paragraph_id: 段落ID
+            
+        Returns:
+            句子列表，按order_index排序
+        """
+        sentences = await Sentence.get_by_paragraph_id(self.db_session, paragraph_id)
+        logger.debug(f"获取段落句子: 段落={paragraph_id}, 数量={len(sentences)}")
+        return sentences
+
     async def delete_sentence(self, sentence_id: str) -> bool:
         """
         删除句子
