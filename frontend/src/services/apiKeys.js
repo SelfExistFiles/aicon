@@ -92,7 +92,8 @@ export const apiKeyUtils = {
             'baidu': '百度文心',
             'alibaba': '阿里云',
             'volcengine': '火山引擎',
-            'custom': '自定义'
+            'custom': '自定义',
+            'siliconflow': 'SiliconFlow'
         }
         return providerMap[provider] || provider
     },
@@ -138,7 +139,8 @@ export const apiKeyUtils = {
             'baidu': 'Search',
             'alibaba': 'Cloudy',
             'volcengine': 'Cloudy',
-            'custom': 'Setting'
+            'custom': 'Setting',
+            'siliconflow': 'Cloudy'
         }
         return iconMap[provider] || 'Key'
     },

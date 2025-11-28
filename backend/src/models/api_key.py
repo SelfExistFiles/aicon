@@ -32,6 +32,7 @@ class APIKeyProvider(str, Enum):
     ALIBABA = "alibaba"
     VOLCENGINE = "volcengine"
     CUSTOM = "custom"
+    SILICONFLOW = "siliconflow"
 
 
 class APIKey(BaseModel):
