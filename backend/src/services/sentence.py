@@ -95,29 +95,37 @@ class SentenceService(BaseService):
     async def update_sentence(
             self,
             sentence_id: str,
-            content: Optional[str] = None
+            content: Optional[str] = None,
+            image_prompt: Optional[str] = None
     ) -> Sentence:
         """
-        更新句子内容
+        更新句子内容或图片提示词
         """
         sentence = await self.get_sentence_by_id(sentence_id)
 
         # 检查章节是否已确认
         paragraph = await self.get(Paragraph, sentence.paragraph_id)
         chapter = await self.get(Chapter, paragraph.chapter_id)
-        if chapter and chapter.is_confirmed:
-            raise BusinessLogicError(
-                "已确认的章节不能修改句子",
-                business_rule="confirmed_chapter_update_sentence",
-                context={"chapter_id": paragraph.chapter_id, "sentence_id": sentence_id}
-            )
-
+        
+        # 只有更新内容时才需要检查章节是否已确认
         if content is not None and content != sentence.content:
+            if chapter and chapter.is_confirmed:
+                raise BusinessLogicError(
+                    "已确认的章节不能修改句子内容",
+                    business_rule="confirmed_chapter_update_sentence",
+                    context={"chapter_id": paragraph.chapter_id, "sentence_id": sentence_id}
+                )
+            
             sentence.content = content
             sentence.word_count = len(content.replace(' ', ''))
             sentence.character_count = len(content)
             # 重置状态为pending，因为内容变了可能需要重新生成
             sentence.status = SentenceStatus.PENDING.value
+            sentence.is_manual_edited = True
+        
+        # 更新图片提示词不需要检查章节是否已确认
+        if image_prompt is not None:
+            sentence.image_prompt = image_prompt
             sentence.is_manual_edited = True
 
         await self.commit()

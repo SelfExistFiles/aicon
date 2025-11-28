@@ -93,7 +93,7 @@ const handleSave = async () => {
       prompt: localSentence.value.image_prompt
     })
     
-    if (response.success) {
+    if (response) {
       ElMessage.success('提示词保存成功')
       emit('save', localSentence.value)
       emit('update:visible', false)

@@ -88,13 +88,35 @@ async def update_sentence(
     sentence_in: SentenceUpdate
 ):
     """
-    更新句子内容
+    更新句子内容或图片提示词
     """
     sentence_service = SentenceService(db)
     
     sentence = await sentence_service.update_sentence(
         sentence_id=sentence_id,
-        content=sentence_in.content
+        content=sentence_in.content,
+        image_prompt=sentence_in.image_prompt
+    )
+    
+    return SentenceResponse.from_dict(sentence.to_dict())
+
+
+@router.put("/{sentence_id}/prompt", response_model=SentenceResponse)
+async def update_sentence_prompt(
+    *,
+    current_user: User = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_db),
+    sentence_id: str,
+    prompt: dict
+):
+    """
+    更新句子的图片提示词
+    """
+    sentence_service = SentenceService(db)
+    
+    sentence = await sentence_service.update_sentence(
+        sentence_id=sentence_id,
+        image_prompt=prompt.get("prompt")
     )
     
     return SentenceResponse.from_dict(sentence.to_dict())

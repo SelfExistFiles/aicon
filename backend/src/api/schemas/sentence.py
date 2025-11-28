@@ -31,12 +31,14 @@ class SentenceCreate(SentenceBase):
 
 class SentenceUpdate(BaseModel):
     """更新句子请求模型"""
-    content: str = Field(..., description="句子内容")
+    content: Optional[str] = Field(None, description="句子内容")
+    image_prompt: Optional[str] = Field(None, description="图片提示词")
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "content": "更新后的句子内容"
+                "content": "更新后的句子内容",
+                "image_prompt": "更新后的提示词"
             }
         }
     }
