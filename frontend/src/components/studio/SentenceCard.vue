@@ -53,6 +53,7 @@
         :disabled="!sentence.image_prompt"
         @click="handleGenerateImage"
         size="small"
+        v-show="sentence.image_url"
       >
         <el-icon><Camera /></el-icon>
         生成图片

@@ -42,7 +42,7 @@
       <!-- 批量生成图片对话框 -->
       <BatchGenerateImagesDialog
         v-model:visible="batchGenerateImagesVisible"
-        :chapter-id="selectedChapterId"
+        :sentences-ids="currentChapterSentenceIds"
         :api-keys="apiKeys"
         @generate-success="handleGenerateSuccess"
       />
@@ -77,7 +77,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useDirectorEngine } from '@/composables/useDirectorEngine'
 import GeneratePromptsDialog from '@/components/studio/GeneratePromptsDialog.vue'
@@ -116,6 +116,11 @@ const promptDialogVisible = ref(false)
 const promptDialogTitle = ref('')
 const currentSentence = ref({})
 const isEditingPrompt = ref(false)
+
+// 计算当前章节的句子ID列表
+const currentChapterSentenceIds = computed(() => {
+  return sentences.value.map(sentence => sentence.id)
+})
 
 // 处理生成成功
 const handleGenerateSuccess = async () => {

@@ -38,8 +38,8 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  chapterId: {
-    type: String,
+  sentencesIds: {
+    type: Array,
     required: true
   },
   apiKeys: {
@@ -86,7 +86,7 @@ const handleGenerate = async () => {
   generating.value = true
   try {
     const response = await api.post('/image/generate-images', {
-      chapter_id: props.chapterId,
+      sentences_ids: props.sentencesIds,
       api_key_id: selectedApiKey.value
     })
     
