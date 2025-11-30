@@ -40,7 +40,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="nav-loading">
+    <div v-if="loading && !chapters.length" class="nav-loading">
       <el-skeleton :rows="5" animated />
     </div>
 
@@ -48,7 +48,12 @@
       <el-empty description="暂无章节" :image-size="80" />
     </div>
 
-    <div v-else class="nav-list">
+    <div 
+      v-else 
+      class="nav-list" 
+      ref="navListRef"
+      @scroll="handleScroll"
+    >
       <div
         v-for="chapter in filteredChapters"
         :key="chapter.id"
@@ -79,24 +84,24 @@
             <el-icon class="action-icon"><MoreFilled /></el-icon>
             <template #dropdown>
               <el-dropdown-menu>
-                  <el-dropdown-item @click="$emit('edit', chapter)">
-                    <el-icon><Edit /></el-icon>
-                    编辑
-                  </el-dropdown-item>
-                  <el-dropdown-item 
-                    v-if="!chapter.is_confirmed && chapter.status === 'pending'"
-                    @click="$emit('confirm', chapter)"
-                  >
-                    <el-icon><Check /></el-icon>
-                    确认章节
-                  </el-dropdown-item>
-                  <el-dropdown-item 
-                    v-if="chapter.is_confirmed"
-                    @click="$emit('director-engine', chapter)"
-                  >
-                    <el-icon><MagicStick /></el-icon>
-                    进入导演引擎
-                  </el-dropdown-item>
+                <el-dropdown-item @click="$emit('edit', chapter)">
+                  <el-icon><Edit /></el-icon>
+                  编辑
+                </el-dropdown-item>
+                <el-dropdown-item 
+                  v-if="!chapter.is_confirmed && chapter.status === 'pending'"
+                  @click="$emit('confirm', chapter)"
+                >
+                  <el-icon><Check /></el-icon>
+                  确认章节
+                </el-dropdown-item>
+                <el-dropdown-item 
+                  v-if="chapter.is_confirmed"
+                  @click="$emit('director-engine', chapter)"
+                >
+                  <el-icon><MagicStick /></el-icon>
+                  进入导演引擎
+                </el-dropdown-item>
                 <el-dropdown-item @click="$emit('delete', chapter)" divided>
                   <el-icon><Delete /></el-icon>
                   删除
@@ -106,24 +111,21 @@
           </el-dropdown>
         </div>
       </div>
-    </div>
-    
-    <!-- 加载更多按钮 - 移到列表外部 -->
-    <div v-if="hasMore && !loading" class="load-more">
-      <el-button
-        size="small"
-        @click="handleLoadMore"
-        :loading="loading"
-      >
-        加载更多章节
-      </el-button>
+      
+      <div v-if="loading && chapters.length" class="loading-more">
+        <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+      </div>
+      <div v-if="!hasMore && filteredChapters.length > 0" class="no-more">
+        没有更多了
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Search, Plus, MoreFilled, Edit, Delete, Check, MagicStick } from '@element-plus/icons-vue'
+import { Search, Plus, MoreFilled, Edit, Delete, Check, MagicStick, Loading } from '@element-plus/icons-vue'
+import { useThrottleFn } from '@vueuse/core'
 
 const props = defineProps({
   chapters: {
@@ -187,6 +189,17 @@ const filteredChapters = computed(() => {
   return result
 })
 
+// 处理滚动加载
+const handleScroll = useThrottleFn((e) => {
+  const { scrollTop, clientHeight, scrollHeight } = e.target
+  // 距离底部 50px 时触发加载
+  if (scrollHeight - scrollTop - clientHeight < 50) {
+    if (props.hasMore && !props.loading) {
+      emit('load-more')
+    }
+  }
+}, 200)
+
 // 处理加载更多
 const handleLoadMore = () => {
   emit('load-more')
@@ -237,6 +250,7 @@ const handleLoadMore = () => {
 
 .nav-list {
   flex: 1;
+  min-height: 0; /* Critical for flexbox overflow */
   overflow-y: auto;
   padding: var(--space-xs);
 }
@@ -377,5 +391,30 @@ const handleLoadMore = () => {
 
 .nav-list::-webkit-scrollbar-thumb:hover {
   background: var(--text-disabled);
+}
+
+.loading-more,
+.no-more {
+  padding: var(--space-sm);
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+}
+
+.is-loading {
+  animation: rotating 2s linear infinite;
+}
+
+@keyframes rotating {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 </style>

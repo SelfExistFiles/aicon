@@ -324,7 +324,7 @@ const loadProject = async () => {
 
 // 加载章节列表
 const currentPage = ref(1)
-const pageSize = ref(100)  // 每页100个章节（后端最大限制）
+const pageSize = ref(20)  // 每页20个章节（与后端默认值匹配）
 const hasMoreChapters = ref(true)
 
 const loadChapters = async (reset = false) => {
@@ -584,10 +584,14 @@ const handleChapterConfirm = async (chapter) => {
     // 显示导演引擎引导提示
     showDirectorGuidance.value = true
     
-    // 重新加载章节列表 (reset=true 以避免重复添加)
-    await loadChapters(true)
+    // 更新本地状态，避免重新加载导致列表跳动或重复
+    const index = chapters.value.findIndex(c => c.id === chapter.id)
+    if (index !== -1) {
+      chapters.value[index].is_confirmed = true
+      chapters.value[index].status = 'confirmed' // 假设后端返回的状态是 confirmed
+    }
     
-    // 如果确认的是当前章节，需要重新加载段落以更新状态（虽然前端已经计算了readOnly，但最好刷新一下）
+    // 如果确认的是当前章节，需要重新加载段落以更新状态
     if (selectedChapterId.value === chapter.id) {
       await loadParagraphs(chapter.id)
     }
@@ -822,7 +826,8 @@ onMounted(async () => {
 
 .panel-container {
   height: 100%;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
   transition: width 0.1s; /* 拖动时稍微平滑一点，但不要太慢 */
 }

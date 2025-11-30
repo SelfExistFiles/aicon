@@ -201,6 +201,7 @@ def generate_prompts_by_ids(self, sentence_ids: List[str], api_key_id: str, styl
     logger.info(f"Celery任务开始: generate_prompts_by_ids (sentence_ids={sentence_ids})")
     result = run_async_task(prompt_service.generate_prompts_by_ids(sentence_ids, api_key_id, style))
     logger.info(f"Celery任务成功: generate_prompts_by_ids (chapter_id={sentence_ids})")
+    return result
 
 
 @celery_app.task(
@@ -227,7 +228,7 @@ def generate_images(self, api_key_id: str, sentences_ids: list[str]):
 
     logger.info(f"Celery任务开始: generate_images (sentences_ids={sentences_ids})")
 
-    image_service.generate_images(api_key_id, sentences_ids)
+    run_async_task(image_service.generate_images(api_key_id, sentences_ids))
     return {"success": True, "message": "图片生成任务已完成"}
 
 

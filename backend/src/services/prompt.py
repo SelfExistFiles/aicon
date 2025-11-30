@@ -54,8 +54,15 @@ async def process_sentence(
         Exception: LLM 调用失败等异常
     """
     # 根据不同供应商选择模型
-    model_name = "doubao-pro" if api_key.provider == "volcengine" else "deepseek-chat"
+    model_name = ""
+    if api_key.provider == "deepseek":
+        model_name = "deepseek-chat"
+    if api_key.provider == "volcengine":
+        model_name = "doubao-pro"
+    if api_key.provider == "siliconflow":
+        model_name = "deepseek-ai/DeepSeek-V3.1-Terminus"
 
+    logger.debug(f"[LLM] 使用模型: {model_name} (Provider: {api_key.provider})")
     # 使用信号量控制并发，避免过度同时请求
     async with semaphore:
         logger.info(
@@ -210,15 +217,15 @@ class PromptService(SessionManagedService):
             # 统一更新章节状态
             chapter.status = ChapterStatus.GENERATED_PROMPTS.value
 
-        # 提交数据库
-        await self.db_session.flush()
-        await self.db_session.commit()
-        logger.info("[DB] 数据库更新完成")
-
         # 更新 API Key 使用次数
         api_key_service = APIKeyService(self.db_session)
         await api_key_service.update_usage(api_key.id, chapter.project.owner_id)
         logger.info("[API KEY] 使用统计已更新")
+
+        # 提交数据库
+        await self.db_session.flush()
+        await self.db_session.commit()
+        logger.info("[DB] 数据库更新完成")
 
     # ============================================================
     # 对外方法：按章节处理

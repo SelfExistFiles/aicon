@@ -48,8 +48,8 @@ async def generate_prompts(
             resource_id=str(request.chapter_id)
         )
 
-    if chapter.status != ChapterStatus.CONFIRMED.value:
-        raise BusinessLogicError(message=f"任务当前状态为：{chapter.status}")
+    # if chapter.status != ChapterStatus.CONFIRMED.value:
+    #     raise BusinessLogicError(message=f"任务当前状态为：{chapter.status}")
 
     # 验证项目权限
     project_service = ProjectService(db)
