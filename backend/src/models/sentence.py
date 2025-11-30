@@ -23,6 +23,8 @@ class SentenceStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     GENERATED_PROMPTS = "generated_prompts"  # 提示词已生成
+    GENERATED_IMAGE = "generated_image"  # 图片已生成
+    GENERATED_AUDIO = "generated_audio"  # 音频已生成
     COMPLETED = "completed"
     FAILED = "failed"
 

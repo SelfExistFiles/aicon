@@ -4,7 +4,7 @@ import asyncio
 from typing import Any, Dict, List
 from openai import AsyncOpenAI
 
-from .base import BaseLLMProvider
+from src.services.provider.base import BaseLLMProvider
 
 
 class SiliconFlowProvider(BaseLLMProvider):
@@ -43,7 +43,7 @@ class SiliconFlowProvider(BaseLLMProvider):
                 messages=messages,
                 **kwargs
             )
-    
+
     async def generate_image(
             self,
             prompt: str,
@@ -53,7 +53,7 @@ class SiliconFlowProvider(BaseLLMProvider):
         """
         调用 SiliconFlow images.generate（纯粹透传）
         """
-        
+
         # 用 semaphore 限制并发
         async with self.semaphore:
             return await self.client.images.generate(
@@ -61,3 +61,20 @@ class SiliconFlowProvider(BaseLLMProvider):
                 prompt=prompt,
                 **kwargs
             )
+
+
+if __name__ == "__main__":
+    import asyncio
+
+
+    async def test():
+        provider = SiliconFlowProvider(api_key="sk-owukmxrmgxxeibazpoxueqqbnlcvdkrinphhkkdbixyyiojr")
+        response = await provider.generate_image(
+            prompt="A beautiful landscape with mountains and a river, in the style of a watercolor painting",
+            n=1,
+            size="512x512"
+        )
+        print(response)
+        print(response.data[0].url)
+
+    asyncio.run(test())

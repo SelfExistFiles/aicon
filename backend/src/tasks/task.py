@@ -21,6 +21,7 @@ from src.core.config import settings
 from src.core.logging import get_logger
 from src.services.project_processing import project_processing_service
 from src.services.prompt import prompt_service
+from src.services.image import image_service
 
 logger = get_logger(__name__)
 
@@ -226,8 +227,9 @@ def generate_images(self, api_key_id: str, sentences_ids: list[str]):
 
     logger.info(f"Celery任务开始: generate_images (sentences_ids={sentences_ids})")
 
-    
+    image_service.generate_images(api_key_id, sentences_ids)
     return {"success": True, "message": "图片生成任务已完成"}
+
 
 # ---------------------------
 # 导出的任务列表
