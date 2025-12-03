@@ -105,41 +105,15 @@ class SubtitleService:
                 else:
                     model = "gpt-4o-mini"
 
-            # 定义JSON schema
-            correction_schema = {
-                "type": "object",
-                "properties": {
-                    "corrected_segments": {
-                        "type": "array",
-                        "description": "纠正后的字幕段落列表",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "index": {
-                                    "type": "integer",
-                                    "description": "段落索引"
-                                },
-                                "corrected_text": {
-                                    "type": "string",
-                                    "description": "纠正后的文本"
-                                }
-                            },
-                            "required": ["index", "corrected_text"]
-                        }
-                    }
-                },
-                "required": ["corrected_segments"]
-            }
-
-            # 构建提示词
+            # 构建提示词 - 简化版，直接要求返回纠正后的完整文本
             system_prompt = """你是一个专业的字幕纠错助手。你的任务是对比语音识别的字幕和原文，纠正字幕中的错别字。
 
 规则：
-1. 保持字幕的时间轴不变，只修正文本内容
+1. 只纠正明显的错别字和识别错误
 2. 参考原文内容，但要保持字幕的口语化特点
-3. 只纠正明显的错别字和识别错误
-4. 不要改变句子的结构和语气
-5. 如果字幕已经正确，保持原样"""
+3. 不要改变句子的结构和语气
+4. 如果字幕已经正确，保持原样
+5. 返回JSON格式：{"corrected_text": "纠正后的完整文本"}"""
 
             user_prompt = f"""原文：
 {original_text}
@@ -147,53 +121,57 @@ class SubtitleService:
 语音识别的字幕：
 {recognized_text}
 
-请纠正字幕中的错别字，返回每个段落的纠正结果。"""
+请纠正字幕中的错别字，返回纠正后的完整文本。"""
 
             # 调用LLM
             logger.info(f"[LLM纠错] 开始纠正字幕，模型: {model}")
+            logger.debug(f"[LLM纠错] 原文: {original_text}")
+            logger.debug(f"[LLM纠错] 识别文本: {recognized_text}")
+            
             response = await llm_provider.completions(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "subtitle_correction",
-                        "schema": correction_schema,
-                        "strict": True
-                    }
-                }
+                response_format={"type": "json_object"}
             )
 
             # 解析响应
             import json
             correction_result = json.loads(response.choices[0].message.content)
-            corrected_segments = correction_result.get("corrected_segments", [])
+            corrected_full_text = correction_result.get("corrected_text", "").strip()
+            
+            if not corrected_full_text:
+                logger.warning("[LLM纠错] LLM返回空文本，使用原始字幕")
+                return subtitle_data
+            
+            logger.info(f"[LLM纠错] 纠正结果: {corrected_full_text}")
 
-            # 应用纠正结果
-            for correction in corrected_segments:
-                index = correction.get("index")
-                corrected_text = correction.get("corrected_text", "")
+            # 将纠正后的文本应用到segments
+            # 简单策略：将整个纠正后的文本作为第一个segment的文本，清空其他segments
+            if len(segments) > 0:
+                # 保留第一个segment的时间信息，更新文本
+                segments[0]["text"] = corrected_full_text
+                
+                # 如果有词级时间轴，更新为单个词
+                if "words" in segments[0]:
+                    original_words = segments[0]["words"]
+                    if original_words:
+                        segments[0]["words"] = [{
+                            "word": corrected_full_text,
+                            "start": original_words[0].get("start", 0),
+                            "end": original_words[-1].get("end", 0) if len(original_words) > 0 else 0
+                        }]
+                
+                # 清空其他segments（如果有多个）
+                # 保留它们是为了保持时间轴完整性，但文本置空
+                for i in range(1, len(segments)):
+                    segments[i]["text"] = ""
+                    if "words" in segments[i]:
+                        segments[i]["words"] = []
 
-                if 0 <= index < len(segments):
-                    # 更新segment的文本
-                    segments[index]["text"] = corrected_text
-
-                    # 如果有词级时间轴，也需要更新
-                    if "words" in segments[index]:
-                        # 简单处理：将纠正后的文本作为单个词
-                        # 保持原有的时间范围
-                        original_words = segments[index]["words"]
-                        if original_words:
-                            segments[index]["words"] = [{
-                                "word": corrected_text,
-                                "start": original_words[0].get("start", 0),
-                                "end": original_words[-1].get("end", 0)
-                            }]
-
-            logger.info(f"[LLM纠错] 纠正完成，共处理 {len(corrected_segments)} 个段落")
+            logger.info(f"[LLM纠错] 纠正完成")
             return subtitle_data
 
         except Exception as e:
