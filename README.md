@@ -276,7 +276,7 @@ uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 # 3. 启动Celery Worker（新终端）
 cd backend
-uv run celery -A src.tasks.celery_app worker --loglevel=info
+uv run celery -A src.tasks.task worker --loglevel=info
 
 # 4. 启动前端服务（新终端）
 cd frontend
