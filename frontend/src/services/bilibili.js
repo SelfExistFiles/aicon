@@ -2,7 +2,7 @@
  * Bilibili发布服务
  */
 
-import { get, post } from './api'
+import { get, post, del, put } from './api'
 
 export const bilibiliService = {
     /**
@@ -38,6 +38,57 @@ export const bilibiliService = {
      */
     async getTidOptions() {
         return await get('/bilibili/tid-options')
+    },
+
+    /**
+     * 获取B站账号列表
+     */
+    async getAccounts() {
+        return await get('/bilibili/accounts')
+    },
+
+    /**
+     * 获取账号登录状态
+     */
+    async getAccountStatus() {
+        return await get('/bilibili/accounts/status')
+    },
+
+    /**
+     * 删除B站账号
+     */
+    async deleteAccount(accountId) {
+        return await del(`/bilibili/accounts/${accountId}`)
+    },
+
+    /**
+     * 获取可发布的视频列表
+     */
+    async getPublishableVideos(params = {}) {
+        return await get('/bilibili/publishable-videos', { params })
+    },
+
+    /**
+     * 创建账号
+     */
+    async createAccount(data) {
+        return await post('/bilibili/accounts/create', data, {
+            params: { account_name: data.account_name }
+        })
+    },
+
+    /**
+     * 检查账号登录状态
+     */
+    async checkAccountLogin(accountId) {
+        return await post(`/bilibili/accounts/${accountId}/check-login`)
+    },
+
+    /**
+     * 设置默认账号
+     */
+    async setDefaultAccount(accountId) {
+        return await put(`/bilibili/accounts/${accountId}/set-default`)
     }
 }
 

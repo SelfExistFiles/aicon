@@ -363,15 +363,25 @@ docker-compose logs -f
 cd backend
 mkdir -p bin
 cd bin
-wget https://github.com/ForgQi/biliup-rs/releases/latest/download/biliup-linux-amd64
-mv biliup-linux-amd64 biliup
+
+# 下载 v0.2.4 的压缩包
+wget https://github.com/biliup/biliup-rs/releases/download/v0.2.4/biliupR-v0.2.4-x86_64-linux.tar.xz
+
+# 解压
+tar -xvf biliupR-v0.2.4-x86_64-linux.tar.xz
+
+# 解压后会包含 biliup 可执行文件，将其移动并赋权
+mv biliupR-v0.2.4-x86_64-linux/biliup biliup
 chmod +x biliup
+
 
 # Windows (PowerShell)
 cd backend
 New-Item -ItemType Directory -Force -Path bin
 cd bin
-# 手动下载: https://github.com/ForgQi/biliup-rs/releases/latest/download/biliup.exe
+
+# 手动下载 v0.2.4 Windows 版本：
+# https://github.com/biliup/biliup-rs/releases/download/v0.2.4/biliupR-v0.2.4-x86_64-windows.zip
 ```
 
 **创建Cookie存储目录**:

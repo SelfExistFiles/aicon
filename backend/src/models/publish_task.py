@@ -112,6 +112,8 @@ class BilibiliAccount(BaseModel):
     account_name = Column(String(100), nullable=False, comment="账号名称")
     cookie_path = Column(String(500), comment="cookie.json存储路径")
     is_active = Column(Boolean, default=True, comment="是否激活")
+    is_default = Column(Boolean, default=False, comment="是否为默认账号")
+    login_status = Column(String(20), default="pending", comment="登录状态: pending/success/failed")
     last_login_at = Column(DateTime, comment="最后登录时间")
 
     # 关系定义
@@ -120,10 +122,22 @@ class BilibiliAccount(BaseModel):
     # 索引定义
     __table_args__ = (
         Index('idx_bilibili_account_user', 'user_id'),
+        Index('idx_bilibili_account_default', 'user_id', 'is_default'),
     )
 
     def __repr__(self) -> str:
         return f"<BilibiliAccount(id={self.id}, account_name='{self.account_name}')>"
+    
+    def mark_login_success(self) -> None:
+        """标记登录成功"""
+        self.login_status = "success"
+        self.is_active = True
+        self.last_login_at = datetime.utcnow()
+    
+    def mark_login_failed(self) -> None:
+        """标记登录失败"""
+        self.login_status = "failed"
+        self.is_active = False
 
 
 __all__ = [

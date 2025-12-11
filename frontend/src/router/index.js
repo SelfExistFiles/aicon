@@ -141,6 +141,32 @@ const routes = [
     ]
   },
   {
+    path: '/bilibili-accounts',
+    name: 'BilibiliAccounts',
+    component: MainLayout,
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'BilibiliAccountsPage',
+        component: () => import('@/views/BilibiliAccounts.vue')
+      }
+    ]
+  },
+  {
+    path: '/bilibili-accounts',
+    name: 'BilibiliAccounts',
+    component: MainLayout,
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'BilibiliAccountsPage',
+        component: () => import('@/views/BilibiliAccounts.vue')
+      }
+    ]
+  },
+  {
     path: '/publish',
     name: 'Publish',
     component: MainLayout,

@@ -131,6 +131,12 @@ const menuItems = [
     badge: null
   },
   {
+    title: 'B站账号',
+    path: '/bilibili-accounts',
+    icon: User,
+    badge: null
+  },
+  {
     title: '内容发布',
     path: '/publish',
     icon: Promotion,

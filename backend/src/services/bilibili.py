@@ -36,56 +36,123 @@ class BilibiliService(BaseService):
             return str(Path("./bin/biliup.exe").absolute())
         return str(Path("./bin/biliup").absolute())
     
-    async def login_by_qrcode(self, account_id: str) -> Dict[str, Any]:
+    async def get_login_command(self, account_id: str) -> Dict[str, Any]:
         """
-        二维码登录
+        获取登录命令和说明
         
         Args:
             account_id: 账号ID
             
         Returns:
-            登录结果
+            登录命令信息
         """
         cookie_file = self.cookie_dir / f"{account_id}.json"
         
-        cmd = [
-            self.biliup_path,
-            "login",
-            "--cookie-file", str(cookie_file)
-        ]
+        return {
+            "success": True,
+            "cookie_file": str(cookie_file),
+            "command": f"cd {Path.cwd()} && {self.biliup_path} login",
+            "post_command": f"mv cookies.json {cookie_file}",
+            "message": "请按以下步骤操作:\n1. 在服务器终端执行登录命令\n2. 选择'扫码登录'\n3. 扫码完成后,执行移动命令将cookie文件移动到指定位置"
+        }
+    
+    async def check_cookie_exists(self, cookie_file: str) -> bool:
+        """
+        检查cookie文件是否存在且有效
         
-        logger.info(f"执行登录命令: {' '.join(cmd)}")
+        Args:
+            cookie_file: cookie文件路径
+            
+        Returns:
+            是否存在有效cookie
+        """
+        cookie_path = Path(cookie_file)
+        
+        # 如果是相对路径,转换为绝对路径
+        if not cookie_path.is_absolute():
+            cookie_path = Path.cwd() / cookie_path
+        
+        logger.info(f"Checking cookie file at: {cookie_path}")
+        
+        if not cookie_path.exists():
+            logger.warning(f"Cookie file does not exist: {cookie_path}")
+            return False
         
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode == 0:
-                logger.info(f"账号 {account_id} 登录成功")
-                return {
-                    "success": True,
-                    "cookie_file": str(cookie_file),
-                    "message": "登录成功"
-                }
-            else:
-                error_msg = stderr.decode('utf-8', errors='ignore')
-                logger.error(f"账号 {account_id} 登录失败: {error_msg}")
-                return {
-                    "success": False,
-                    "error": error_msg
-                }
+            with open(cookie_path, 'r', encoding='utf-8') as f:
+                cookie_data = json.load(f)
+                # biliup-rs的cookie格式: 
+                # - token_info.access_token
+                # - cookie_info.cookies (数组)
+                has_token = bool(
+                    cookie_data.get('token_info', {}).get('access_token') or
+                    cookie_data.get('cookie_info', {}).get('cookies') or
+                    cookie_data.get('access_token') or
+                    cookie_data.get('cookies')
+                )
+                logger.info(f"Cookie file valid: {has_token}")
+                return has_token
         except Exception as e:
-            logger.error(f"登录过程异常: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            logger.error(f"读取cookie文件失败: {e}")
+            return False
     
+    async def get_cookie_file_for_account(self, account_id: str) -> Optional[str]:
+        """
+        获取指定账号的cookie文件路径
+        
+        Args:
+            account_id: 账号ID
+            
+        Returns:
+            cookie文件路径
+        """
+        cookie_file = self.cookie_dir / f"{account_id}.json"
+        
+        if await self.check_cookie_exists(str(cookie_file)):
+            return str(cookie_file)
+        
+        return None
+    
+    async def get_cookie_file(self, user_id: str) -> Optional[str]:
+        """
+        获取用户默认账号的cookie文件路径
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            cookie文件路径,如果不存在返回None
+        """
+        from src.models.publish_task import BilibiliAccount
+        
+        # 优先获取默认账号
+        query = select(BilibiliAccount).where(
+            BilibiliAccount.user_id == user_id,
+            BilibiliAccount.is_default == True,
+            BilibiliAccount.is_active == True
+        )
+        
+        result = await self.execute(query)
+        account = result.scalar_one_or_none()
+        
+        # 如果没有默认账号,获取最近登录的账号
+        if not account:
+            query = select(BilibiliAccount).where(
+                BilibiliAccount.user_id == user_id,
+                BilibiliAccount.is_active == True
+            ).order_by(BilibiliAccount.last_login_at.desc())
+            
+            result = await self.execute(query)
+            account = result.scalar_one_or_none()
+        
+        if account and account.cookie_path:
+            cookie_path = Path(account.cookie_path)
+            if cookie_path.exists():
+                return str(cookie_path)
+        
+        return None
+    
+    # 在BilibiliService类中添加以下方法(在get_cookie_file方法之后):
     async def upload_video(
         self,
         video_path: str,
@@ -146,7 +213,7 @@ class BilibiliService(BaseService):
         if dtime:
             cmd.extend(["--dtime", str(dtime)])
         if cookie_file:
-            cmd.extend(["--cookie-file", cookie_file])
+            cmd.extend(["-u", cookie_file])
         
         logger.info(f"执行上传命令: {' '.join(cmd)}")
         
@@ -186,7 +253,7 @@ class BilibiliService(BaseService):
                 "success": False,
                 "error": str(e)
             }
-    
+            
     def _extract_bvid(self, output: str) -> Optional[str]:
         """从输出中提取BV号"""
         match = re.search(r'BV[a-zA-Z0-9]+', output)
@@ -196,33 +263,7 @@ class BilibiliService(BaseService):
         """从输出中提取AV号"""
         match = re.search(r'av(\d+)', output, re.IGNORECASE)
         return match.group(1) if match else None
-    
-    async def get_cookie_file(self, user_id: str) -> Optional[str]:
-        """
-        获取用户的cookie文件路径
-        
-        Args:
-            user_id: 用户ID
-            
-        Returns:
-            cookie文件路径,如果不存在返回None
-        """
-        from src.models.publish_task import BilibiliAccount
-        
-        query = select(BilibiliAccount).where(
-            BilibiliAccount.user_id == user_id,
-            BilibiliAccount.is_active == True
-        ).order_by(BilibiliAccount.last_login_at.desc())
-        
-        result = await self.execute(query)
-        account = result.scalar_one_or_none()
-        
-        if account and account.cookie_path:
-            cookie_path = Path(account.cookie_path)
-            if cookie_path.exists():
-                return str(cookie_path)
-        
-        return None
+
 
 
 class BilibiliPublishService(SessionManagedService):

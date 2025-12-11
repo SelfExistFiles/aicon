@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user_required
 from src.api.schemas.bilibili import (
+    BilibiliAccountInfo,
     LoginResponse,
     PublishRequest,
     PublishResponse,
@@ -25,43 +26,134 @@ from src.tasks.bilibili_task import upload_chapter_to_bilibili
 router = APIRouter()
 
 
-@router.post("/login/qrcode", response_model=LoginResponse)
-async def login_by_qrcode(
+@router.post("/accounts/create")
+async def create_account(
         *,
         current_user: User = Depends(get_current_user_required),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
+        account_name: str
 ):
-    """二维码登录B站"""
+    """创建新账号并获取登录命令"""
+    from datetime import datetime
+    
+    # 创建账号记录
+    account = BilibiliAccount(
+        user_id=current_user.id,
+        account_name=account_name,
+        is_active=False,
+        login_status="pending"
+    )
+    db.add(account)
+    await db.commit()
+    await db.refresh(account)
+    
+    # 获取登录命令
     bilibili_service = BilibiliService(db)
-    result = await bilibili_service.login_by_qrcode(str(current_user.id))
+    login_info = await bilibili_service.get_login_command(str(account.id))
     
-    # 如果登录成功,保存账号信息
-    if result["success"]:
-        # 检查是否已存在账号
-        query = select(BilibiliAccount).where(
-            BilibiliAccount.user_id == current_user.id
+    # 更新cookie路径
+    account.cookie_path = login_info["cookie_file"]
+    await db.commit()
+    
+    return {
+        "success": True,
+        "account_id": str(account.id),
+        "account_name": account.account_name,
+        "command": login_info["command"],
+        "post_command": login_info["post_command"],
+        "cookie_file": login_info["cookie_file"],
+        "message": login_info["message"]
+    }
+
+
+@router.post("/accounts/{account_id}/check-login")
+async def check_account_login(
+        *,
+        current_user: User = Depends(get_current_user_required),
+        db: AsyncSession = Depends(get_db),
+        account_id: str
+):
+    """检查账号登录状态"""
+    from datetime import datetime
+    
+    # 获取账号
+    query = select(BilibiliAccount).where(
+        BilibiliAccount.id == account_id,
+        BilibiliAccount.user_id == current_user.id
+    )
+    result = await db.execute(query)
+    account = result.scalar_one_or_none()
+    
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="账号不存在"
         )
-        existing_result = await db.execute(query)
-        account = existing_result.scalar_one_or_none()
-        
-        if account:
-            # 更新现有账号
-            account.cookie_path = result["cookie_file"]
-            account.last_login_at = datetime.utcnow()
-        else:
-            # 创建新账号
-            from datetime import datetime
-            account = BilibiliAccount(
-                user_id=current_user.id,
-                account_name=f"B站账号_{current_user.username}",
-                cookie_path=result["cookie_file"],
-                last_login_at=datetime.utcnow()
-            )
-            db.add(account)
-        
-        await db.commit()
     
-    return LoginResponse(**result)
+    # 检查cookie文件
+    bilibili_service = BilibiliService(db)
+    print("Checking cookie at path: ")
+    print(account.cookie_path)
+    cookie_exists = await bilibili_service.check_cookie_exists(account.cookie_path)
+    
+    if cookie_exists:
+        # 登录成功
+        account.mark_login_success()
+        await db.commit()
+        
+        return {
+            "success": True,
+            "logged_in": True,
+            "message": "登录成功"
+        }
+    else:
+        return {
+            "success": True,
+            "logged_in": False,
+            "message": "Cookie文件不存在,请确认已完成登录"
+        }
+
+
+@router.put("/accounts/{account_id}/set-default")
+async def set_default_account(
+        *,
+        current_user: User = Depends(get_current_user_required),
+        db: AsyncSession = Depends(get_db),
+        account_id: str
+):
+    """设置默认账号"""
+    # 取消其他账号的默认状态
+    query = select(BilibiliAccount).where(
+        BilibiliAccount.user_id == current_user.id,
+        BilibiliAccount.is_default == True
+    )
+    result = await db.execute(query)
+    old_defaults = result.scalars().all()
+    
+    for acc in old_defaults:
+        acc.is_default = False
+    
+    # 设置新的默认账号
+    query = select(BilibiliAccount).where(
+        BilibiliAccount.id == account_id,
+        BilibiliAccount.user_id == current_user.id
+    )
+    result = await db.execute(query)
+    account = result.scalar_one_or_none()
+    
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="账号不存在"
+        )
+    
+    account.is_default = True
+    await db.commit()
+    
+    return {
+        "success": True,
+        "message": "已设置为默认账号"
+    }
 
 
 @router.get("/publishable-videos")
@@ -284,6 +376,114 @@ async def get_tid_options():
         TidOption(label="国创", value=167),
         TidOption(label="鬼畜", value=119),
     ]
+
+
+@router.get("/accounts", response_model=List[BilibiliAccountInfo])
+async def get_bilibili_accounts(
+        *,
+        current_user: User = Depends(get_current_user_required),
+        db: AsyncSession = Depends(get_db)
+):
+    """获取用户的B站账号列表"""
+    query = select(BilibiliAccount).where(
+        BilibiliAccount.user_id == current_user.id
+    ).order_by(BilibiliAccount.last_login_at.desc())
+    
+    result = await db.execute(query)
+    accounts = result.scalars().all()
+    
+    # 检查cookie有效性
+    bilibili_service = BilibiliService(db)
+    account_list = []
+    
+    for account in accounts:
+        cookie_valid = False
+        if account.cookie_path:
+            cookie_valid = await bilibili_service.check_cookie_exists(account.cookie_path)
+        
+        account_list.append(BilibiliAccountInfo(
+            id=str(account.id),
+            account_name=account.account_name,
+            is_active=account.is_active and cookie_valid,
+            is_default=account.is_default,
+            cookie_valid=cookie_valid,
+            last_login_at=account.last_login_at,
+            created_at=account.created_at
+        ))
+    
+    return account_list
+
+
+@router.get("/accounts/status")
+async def get_account_status(
+        *,
+        current_user: User = Depends(get_current_user_required),
+        db: AsyncSession = Depends(get_db)
+):
+    """获取账号登录状态"""
+    query = select(BilibiliAccount).where(
+        BilibiliAccount.user_id == current_user.id,
+        BilibiliAccount.is_active == True
+    ).order_by(BilibiliAccount.last_login_at.desc())
+    
+    result = await db.execute(query)
+    account = result.scalar_one_or_none()
+    
+    if not account:
+        return {
+            "logged_in": False,
+            "message": "未登录B站账号"
+        }
+    
+    # 检查cookie文件是否存在
+    from pathlib import Path
+    cookie_path = Path(account.cookie_path) if account.cookie_path else None
+    cookie_exists = cookie_path.exists() if cookie_path else False
+    
+    return {
+        "logged_in": cookie_exists,
+        "account_name": account.account_name,
+        "last_login_at": account.last_login_at.isoformat() if account.last_login_at else None,
+        "message": "已登录" if cookie_exists else "Cookie已过期,请重新登录"
+    }
+
+
+@router.delete("/accounts/{account_id}")
+async def delete_bilibili_account(
+        *,
+        current_user: User = Depends(get_current_user_required),
+        db: AsyncSession = Depends(get_db),
+        account_id: str
+):
+    """删除B站账号"""
+    query = select(BilibiliAccount).where(
+        BilibiliAccount.id == account_id,
+        BilibiliAccount.user_id == current_user.id
+    )
+    result = await db.execute(query)
+    account = result.scalar_one_or_none()
+    
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="账号不存在"
+        )
+    
+    # 删除cookie文件
+    from pathlib import Path
+    if account.cookie_path:
+        cookie_path = Path(account.cookie_path)
+        if cookie_path.exists():
+            cookie_path.unlink()
+    
+    # 删除账号记录
+    await db.delete(account)
+    await db.commit()
+    
+    return {
+        "success": True,
+        "message": "账号已删除"
+    }
 
 
 __all__ = ["router"]

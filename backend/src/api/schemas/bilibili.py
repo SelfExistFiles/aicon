@@ -51,7 +51,7 @@ class LoginResponse(BaseModel):
     """登录响应"""
     success: bool = Field(..., description="是否成功")
     cookie_file: Optional[str] = Field(None, description="cookie文件路径")
-    message: str = Field(..., description="提示信息")
+    message: str = Field("", description="提示信息")
     error: Optional[str] = Field(None, description="错误信息")
 
 
@@ -61,10 +61,22 @@ class TidOption(BaseModel):
     value: int = Field(..., description="分区ID")
 
 
+class BilibiliAccountInfo(BaseModel):
+    """B站账号信息"""
+    id: str = Field(..., description="账号ID")
+    account_name: str = Field(..., description="账号名称")
+    is_active: bool = Field(..., description="是否激活")
+    is_default: bool = Field(False, description="是否为默认账号")
+    cookie_valid: bool = Field(False, description="Cookie是否有效")
+    last_login_at: Optional[datetime] = Field(None, description="最后登录时间")
+    created_at: datetime = Field(..., description="创建时间")
+
+
 __all__ = [
     "PublishRequest",
     "PublishResponse",
     "PublishTaskStatus",
     "LoginResponse",
     "TidOption",
+    "BilibiliAccountInfo",
 ]

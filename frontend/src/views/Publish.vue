@@ -1,269 +1,563 @@
 <template>
-  <div class="publish-page">
-    <!-- 页面头部信息 -->
+  <div class="publish-management">
+    <!-- 页面头部 -->
     <div class="page-header">
-      <h1 class="page-title">
-        <el-icon class="title-icon"><Promotion /></el-icon>
-        内容分发
-      </h1>
-      <p class="page-description">将您的内容一键发布到多个平台</p>
-    </div>
-
-    <!-- 主要内容区 -->
-    <div class="publish-content">
-      <div class="publish-steps">
-        <el-steps :active="currentStep" finish-status="success" align-center>
-          <el-step title="选择内容" description="选择要发布的项目内容"></el-step>
-          <el-step title="配置平台" description="选择发布平台和配置"></el-step>
-          <el-step title="预览发布" description="预览并确认发布内容"></el-step>
-          <el-step title="发布完成" description="内容已成功发布"></el-step>
-        </el-steps>
+      <div class="header-left">
+        <h1 class="page-title">
+          <el-icon class="title-icon"><Promotion /></el-icon>
+          Bilibili发布管理
+        </h1>
+        <p class="page-description">将生成的视频发布到Bilibili平台</p>
       </div>
-
-      <div class="publish-form">
-        <!-- 步骤1: 选择内容 -->
-        <div v-if="currentStep === 0" class="step-content">
-          <div class="step-header">
-            <h3>选择要发布的内容</h3>
-            <p>请从您的项目中选择一个进行发布</p>
-          </div>
-
-          <div class="content-selection">
-            <el-empty description="暂无可发布的内容">
-              <el-button type="primary" @click="$router.push('/projects')">
-                前往项目管理
-              </el-button>
-            </el-empty>
-          </div>
-        </div>
-
-        <!-- 步骤2: 配置平台 -->
-        <div v-if="currentStep === 1" class="step-content">
-          <div class="step-header">
-            <h3>配置发布平台</h3>
-            <p>选择您要发布的平台并设置相关参数</p>
-          </div>
-
-          <div class="platform-config">
-            <el-empty description="发布平台功能开发中">
-              <el-icon size="64"><Platform /></el-icon>
-            </el-empty>
-          </div>
-        </div>
-
-        <!-- 步骤3: 预览发布 -->
-        <div v-if="currentStep === 2" class="step-content">
-          <div class="step-header">
-            <h3>预览发布内容</h3>
-            <p>确认内容无误后进行发布</p>
-          </div>
-
-          <div class="content-preview">
-            <el-empty description="预览功能开发中">
-              <el-icon size="64"><View /></el-icon>
-            </el-empty>
-          </div>
-        </div>
-
-        <!-- 步骤4: 发布完成 -->
-        <div v-if="currentStep === 3" class="step-content">
-          <div class="step-header">
-            <h3>发布成功！</h3>
-            <p>您的内容已成功发布到选定平台</p>
-          </div>
-
-          <div class="publish-success">
-            <el-result
-              icon="success"
-              title="发布成功"
-              sub-title="您的内容已成功发布"
-            >
-              <template #extra>
-                <el-button type="primary" @click="resetPublish">继续发布</el-button>
-                <el-button @click="$router.push('/projects')">返回项目</el-button>
-              </template>
-            </el-result>
-          </div>
-        </div>
-      </div>
-
-      <!-- 操作按钮 -->
-      <div class="step-actions">
-        <el-button
-          v-if="currentStep > 0"
-          @click="prevStep"
-          :disabled="currentStep === 0"
-        >
-          上一步
-        </el-button>
-        <el-button
-          v-if="currentStep < 3"
-          type="primary"
-          @click="nextStep"
-          :disabled="!canProceed"
-        >
-          下一步
+      <div class="header-right">
+        <el-button type="primary" @click="handleLogin" :loading="loginLoading">
+          <el-icon><User /></el-icon>
+          {{ accountStatus.logged_in ? '重新登录' : 'B站登录' }}
         </el-button>
       </div>
     </div>
+
+    <!-- 账号状态卡片 -->
+    <el-card v-if="accountStatus.logged_in" class="account-status-card" shadow="never">
+      <div class="account-info">
+        <el-icon class="status-icon success"><CircleCheck /></el-icon>
+        <div class="info-content">
+          <div class="account-name">{{ accountStatus.account_name }}</div>
+          <div class="login-time">最后登录: {{ formatTime(accountStatus.last_login_at) }}</div>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 标签页 -->
+    <el-tabs v-model="activeTab" class="publish-tabs">
+      <!-- 可发布视频列表 -->
+      <el-tab-pane label="可发布视频" name="videos">
+        <div v-loading="videosLoading" class="videos-container">
+          <el-empty v-if="!videosLoading && videos.length === 0" description="暂无可发布的视频">
+            <el-button type="primary" @click="$router.push('/video-tasks')">
+              前往视频任务
+            </el-button>
+          </el-empty>
+
+          <div v-else class="video-grid">
+            <div v-for="video in videos" :key="video.id" class="video-card">
+              <div class="video-preview">
+                <video :src="video.video_url" controls class="video-player"></video>
+              </div>
+              <div class="video-info">
+                <h3 class="video-title">{{ video.project_title }} - {{ video.chapter_title }}</h3>
+                <div class="video-meta">
+                  <span class="meta-item">
+                    <el-icon><Clock /></el-icon>
+                    {{ formatDuration(video.video_duration) }}
+                  </span>
+                  <span class="meta-item">
+                    <el-icon><Calendar /></el-icon>
+                    {{ formatDate(video.created_at) }}
+                  </span>
+                </div>
+                <el-button type="primary" @click="handlePublish(video)" class="publish-btn">
+                  <el-icon><Upload /></el-icon>
+                  发布到B站
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 发布任务列表 -->
+      <el-tab-pane label="发布任务" name="tasks">
+        <div v-loading="tasksLoading" class="tasks-container">
+          <el-empty v-if="!tasksLoading && tasks.length === 0" description="暂无发布任务" />
+
+          <div v-else class="task-list">
+            <div v-for="task in tasks" :key="task.id" class="task-item">
+              <div class="task-header">
+                <h4 class="task-title">{{ task.title }}</h4>
+                <el-tag :type="getStatusType(task.status)">{{ getStatusText(task.status) }}</el-tag>
+              </div>
+              
+              <el-progress 
+                v-if="task.status === 'uploading'" 
+                :percentage="task.progress" 
+                :status="task.progress === 100 ? 'success' : undefined"
+              />
+
+              <div class="task-info">
+                <span class="info-item">平台: {{ task.platform }}</span>
+                <span class="info-item">创建时间: {{ formatDate(task.created_at) }}</span>
+                <span v-if="task.bvid" class="info-item">
+                  BV号: 
+                  <a :href="`https://www.bilibili.com/video/${task.bvid}`" target="_blank" class="bv-link">
+                    {{ task.bvid }}
+                  </a>
+                </span>
+              </div>
+
+              <el-alert v-if="task.error_message" :title="task.error_message" type="error" :closable="false" />
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 发布对话框 -->
+    <el-dialog
+      v-model="publishDialogVisible"
+      title="发布到Bilibili"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="publishForm" :rules="publishRules" ref="publishFormRef" label-width="80px">
+        <el-form-item label="标题" prop="title">
+          <el-input v-model="publishForm.title" maxlength="80" show-word-limit placeholder="请输入视频标题" />
+        </el-form-item>
+
+        <el-form-item label="简介" prop="desc">
+          <el-input
+            v-model="publishForm.desc"
+            type="textarea"
+            :rows="4"
+            maxlength="2000"
+            show-word-limit
+            placeholder="请输入视频简介"
+          />
+        </el-form-item>
+
+        <el-form-item label="分区" prop="tid">
+          <el-select v-model="publishForm.tid" placeholder="请选择分区" style="width: 100%">
+            <el-option
+              v-for="option in tidOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="标签" prop="tag">
+          <el-input v-model="publishForm.tag" placeholder="多个标签用逗号分隔,最多10个" />
+        </el-form-item>
+
+        <el-form-item label="类型" prop="copyright">
+          <el-radio-group v-model="publishForm.copyright">
+            <el-radio :label="1">原创</el-radio>
+            <el-radio :label="2">转载</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="publishForm.copyright === 2" label="转载源" prop="source">
+          <el-input v-model="publishForm.source" placeholder="请输入转载来源" />
+        </el-form-item>
+
+        <el-form-item label="上传线路" prop="upload_line">
+          <el-select v-model="publishForm.upload_line" style="width: 100%">
+            <el-option label="七牛云 (kodo)" value="kodo" />
+            <el-option label="百度云 (bda2)" value="bda2" />
+            <el-option label="腾讯云 (qn)" value="qn" />
+            <el-option label="网宿 (ws)" value="ws" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="publishDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitPublish" :loading="publishing">
+          确认发布
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { Promotion, Platform, View } from '@element-plus/icons-vue'
+import { ref, onMounted, reactive } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Promotion, User, CircleCheck, Clock, Calendar, Upload } from '@element-plus/icons-vue'
+import bilibiliService from '@/services/bilibili'
 
-const currentStep = ref(0)
+const activeTab = ref('videos')
+const videos = ref([])
+const tasks = ref([])
+const videosLoading = ref(false)
+const tasksLoading = ref(false)
+const loginLoading = ref(false)
+const publishing = ref(false)
+const publishDialogVisible = ref(false)
+const publishFormRef = ref(null)
+const tidOptions = ref([])
+const currentVideo = ref(null)
 
-// 是否可以进入下一步
-const canProceed = computed(() => {
-  // 这里可以根据实际业务逻辑判断
-  return true
+const accountStatus = ref({
+  logged_in: false,
+  account_name: '',
+  last_login_at: null,
+  message: ''
 })
 
-// 下一步
-const nextStep = () => {
-  if (currentStep.value < 3) {
-    currentStep.value++
+const publishForm = reactive({
+  video_task_id: '',
+  title: '',
+  desc: '',
+  tid: 171,
+  tag: '',
+  copyright: 1,
+  source: '',
+  upload_line: 'kodo',
+  upload_limit: 3
+})
+
+const publishRules = {
+  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
+  tid: [{ required: true, message: '请选择分区', trigger: 'change' }]
+}
+
+// 加载账号状态
+const loadAccountStatus = async () => {
+  try {
+    const res = await bilibiliService.getAccountStatus()
+    accountStatus.value = res
+  } catch (error) {
+    console.error('获取账号状态失败:', error)
   }
 }
 
-// 上一步
-const prevStep = () => {
-  if (currentStep.value > 0) {
-    currentStep.value--
+// 加载可发布视频
+const loadVideos = async () => {
+  videosLoading.value = true
+  try {
+    const res = await bilibiliService.getPublishableVideos()
+    videos.value = res.videos || []
+  } catch (error) {
+    ElMessage.error('加载视频列表失败')
+  } finally {
+    videosLoading.value = false
   }
 }
 
-// 重置发布流程
-const resetPublish = () => {
-  currentStep.value = 0
+// 加载发布任务
+const loadTasks = async () => {
+  tasksLoading.value = true
+  try {
+    const res = await bilibiliService.getTasks()
+    tasks.value = res || []
+  } catch (error) {
+    ElMessage.error('加载任务列表失败')
+  } finally {
+    tasksLoading.value = false
+  }
 }
+
+// 加载分区选项
+const loadTidOptions = async () => {
+  try {
+    tidOptions.value = await bilibiliService.getTidOptions()
+  } catch (error) {
+    console.error('加载分区选项失败:', error)
+  }
+}
+
+// 登录B站
+const handleLogin = async () => {
+  loginLoading.value = true
+  try {
+    const res = await bilibiliService.loginByQrcode()
+    if (res.success) {
+      ElMessage.success('登录成功')
+      await loadAccountStatus()
+    } else {
+      ElMessage.error(res.message || '登录失败')
+    }
+  } catch (error) {
+    ElMessage.error('登录失败')
+  } finally {
+    loginLoading.value = false
+  }
+}
+
+// 打开发布对话框
+const handlePublish = (video) => {
+  if (!accountStatus.value.logged_in) {
+    ElMessage.warning('请先登录B站账号')
+    return
+  }
+
+  currentVideo.value = video
+  publishForm.video_task_id = video.id
+  publishForm.title = `${video.project_title} - ${video.chapter_title}`
+  publishForm.desc = ''
+  publishDialogVisible.value = true
+}
+
+// 提交发布
+const submitPublish = async () => {
+  const valid = await publishFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  publishing.value = true
+  try {
+    const res = await bilibiliService.publishVideo(publishForm)
+    if (res.success) {
+      ElMessage.success('发布任务已提交')
+      publishDialogVisible.value = false
+      activeTab.value = 'tasks'
+      await loadTasks()
+    } else {
+      ElMessage.error(res.message || '发布失败')
+    }
+  } catch (error) {
+    ElMessage.error('发布失败')
+  } finally {
+    publishing.value = false
+  }
+}
+
+// 格式化时间
+const formatTime = (time) => {
+  if (!time) return '-'
+  return new Date(time).toLocaleString('zh-CN')
+}
+
+// 格式化日期
+const formatDate = (date) => {
+  if (!date) return '-'
+  return new Date(date).toLocaleDateString('zh-CN')
+}
+
+// 格式化时长
+const formatDuration = (seconds) => {
+  if (!seconds) return '-'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+// 获取状态类型
+const getStatusType = (status) => {
+  const typeMap = {
+    pending: 'info',
+    uploading: 'warning',
+    published: 'success',
+    failed: 'danger'
+  }
+  return typeMap[status] || 'info'
+}
+
+// 获取状态文本
+const getStatusText = (status) => {
+  const textMap = {
+    pending: '等待中',
+    uploading: '上传中',
+    published: '已发布',
+    failed: '失败'
+  }
+  return textMap[status] || status
+}
+
+onMounted(async () => {
+  await Promise.all([
+    loadAccountStatus(),
+    loadVideos(),
+    loadTasks(),
+    loadTidOptions()
+  ])
+})
 </script>
 
 <style scoped>
-.publish-page {
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-  max-width: 1000px;
+.publish-management {
+  padding: 24px;
+  max-width: 1400px;
   margin: 0 auto;
-  width: 100%;
 }
 
-.publish-content {
-  background: var(--bg-primary);
-  border-radius: var(--radius-xl);
-  padding: 40px;
-  box-shadow: var(--shadow-sm);
-  min-height: 600px;
+.page-header {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
 }
 
-.publish-steps {
-  margin-bottom: 60px;
-  padding: 0 40px;
+.header-left {
+  flex: 1;
 }
 
-:deep(.el-step__title) {
-  font-size: 14px;
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 28px;
   font-weight: 600;
-  margin-top: 8px;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
 }
 
-:deep(.el-step__description) {
+.title-icon {
+  font-size: 32px;
+  color: var(--primary-color);
+}
+
+.page-description {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.account-status-card {
+  margin-bottom: 24px;
+}
+
+.account-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-icon {
+  font-size: 24px;
+}
+
+.status-icon.success {
+  color: var(--el-color-success);
+}
+
+.info-content {
+  flex: 1;
+}
+
+.account-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.login-time {
   font-size: 12px;
   color: var(--text-secondary);
   margin-top: 4px;
 }
 
-.publish-form {
-  flex: 1;
-  position: relative;
+.publish-tabs {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.videos-container,
+.tasks-container {
+  min-height: 400px;
+}
+
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 24px;
+}
+
+.video-card {
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
   overflow: hidden;
+  transition: all 0.3s;
 }
 
-.step-content {
-  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+.video-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
 }
 
-.step-header {
-  text-align: center;
-  margin-bottom: 40px;
+.video-preview {
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #000;
 }
 
-.step-header h3 {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 8px 0;
-  letter-spacing: -0.5px;
+.video-player {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-.step-header p {
+.video-info {
+  padding: 16px;
+}
+
+.video-title {
   font-size: 16px;
-  color: var(--text-secondary);
-  margin: 0;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.content-selection,
-.platform-config,
-.content-preview {
+.video-meta {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.meta-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  border: 1px dashed var(--border-primary);
-  margin-bottom: 40px;
-  transition: all 0.3s ease;
+  gap: 4px;
 }
 
-.content-selection:hover,
-.platform-config:hover,
-.content-preview:hover {
-  border-color: var(--primary-color);
-  background: var(--bg-primary);
+.publish-btn {
+  width: 100%;
 }
 
-.step-actions {
+.task-list {
   display: flex;
-  justify-content: center;
-  gap: 20px;
-  margin-top: auto;
-  padding-top: 20px;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.step-actions .el-button {
-  min-width: 120px;
-  height: 40px;
-  font-weight: 500;
+.task-item {
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 16px;
 }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .publish-content {
-    padding: 20px;
-  }
+.task-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
 
-  .publish-steps {
-    padding: 0;
-    margin-bottom: 40px;
-  }
+.task-info {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
 
-  :deep(.el-step__title) {
-    font-size: 12px;
-  }
+.info-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
-  .step-header h3 {
-    font-size: 20px;
-  }
+.bv-link {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.bv-link:hover {
+  text-decoration: underline;
 }
 </style>
