@@ -70,6 +70,10 @@
             <el-icon><DocumentChecked /></el-icon>
             检测素材
           </el-button>
+          <el-button type="primary" plain @click="handleExportToJianYing" :loading="exportingToJianYing" :disabled="!isMaterialsReady">
+            <el-icon><Download /></el-icon>
+            导出剪映
+          </el-button>
         </div>
       </el-form>
       
@@ -167,7 +171,7 @@ import SentenceCard from '@/components/studio/SentenceCard.vue'
 import PromptDialog from '@/components/studio/PromptDialog.vue'
 import MaterialCheckDialog from '@/components/studio/MaterialCheckDialog.vue'
 import MaterialPreviewDialog from '@/components/studio/MaterialPreviewDialog.vue'
-import { DocumentChecked } from '@element-plus/icons-vue'
+import { DocumentChecked, Download } from '@element-plus/icons-vue'
 
 // Props
 const props = defineProps({
@@ -212,6 +216,14 @@ const taskCompletionStats = ref(null)
 const checkingMaterials = ref(false)
 const materialCheckVisible = ref(false)
 const materialCheckResult = ref(null)
+
+// 导出状态
+const exportingToJianYing = ref(false)
+
+// 计算素材是否准备就绪
+const isMaterialsReady = computed(() => {
+  return materialCheckResult.value?.all_ready || false
+})
 
 // 预览状态
 const previewDialogVisible = ref(false)
@@ -431,6 +443,41 @@ const handlePreview = ({ type, content }) => {
   previewType.value = type
   previewContent.value = content
   previewDialogVisible.value = true
+}
+
+// 处理导出到剪映
+const handleExportToJianYing = async () => {
+  if (!selectedChapterId.value) {
+    ElMessage.warning('请先选择章节')
+    return
+  }
+  
+  if (!isMaterialsReady.value) {
+    ElMessage.warning('请先检测素材，确保所有素材已准备就绪')
+    return
+  }
+  
+  exportingToJianYing.value = true
+  
+  try {
+    const exportService = await import('@/services/export')
+    const response = await exportService.default.exportToJianYing(selectedChapterId.value)
+    
+    if (response.success) {
+      ElMessage.success('导出成功，开始下载...')
+      
+      // 触发文件下载
+      const downloadUrl = `${import.meta.env.VITE_API_BASE_URL}${response.download_url}`
+      exportService.default.downloadFile(downloadUrl, response.filename)
+    } else {
+      ElMessage.error(response.message || '导出失败')
+    }
+  } catch (error) {
+    console.error('导出失败:', error)
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    exportingToJianYing.value = false
+  }
 }
 </script>
 

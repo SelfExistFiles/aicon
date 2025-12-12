@@ -47,6 +47,7 @@ class Sentence(BaseModel):
     image_prompt = Column(Text, nullable=True, comment="图片生成提示词")
     image_style = Column(String(100), nullable=True, comment="图片风格")
     audio_url = Column(String(500), nullable=True, comment="生成的音频URL")
+    audio_duration = Column(Float, nullable=True, comment="音频时长（秒）")
 
     # 视频缓存字段
     sentence_video_key = Column(String(500), nullable=True, comment="单句视频MinIO对象键")

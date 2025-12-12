@@ -116,8 +116,31 @@ async def process_sentence(
             )
             object_key = storage_result["object_key"]
 
+            # --- 计算音频时长 ---
+            try:
+                from src.utils.ffmpeg_utils import get_audio_duration
+                import tempfile
+                import os
+                
+                # 下载音频文件到临时位置以计算时长
+                temp_audio_path = os.path.join(tempfile.gettempdir(), f"{file_id}.mp3")
+                await storage_client.download_file_to_path(object_key, temp_audio_path)
+                
+                # 获取时长
+                duration = get_audio_duration(temp_audio_path)
+                
+                # 清理临时文件
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                    
+                logger.info(f"[AUDIO] 句子 {sentence.id} 音频时长: {duration}秒")
+            except Exception as e:
+                logger.warning(f"[AUDIO] 无法获取音频时长: {e}")
+                duration = None
+
             # --- 更新数据库 ---
             sentence.audio_url = object_key
+            sentence.audio_duration = duration
             sentence.status = SentenceStatus.GENERATED_AUDIO
             sentence.mark_material_updated()  # 标记需要重新生成视频
             # 注意：不在这里 flush/commit，避免并发冲突

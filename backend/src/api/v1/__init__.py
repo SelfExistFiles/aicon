@@ -36,6 +36,7 @@ from .tasks import router as tasks_router
 from .video_tasks import router as video_tasks_router
 from .dashboard import router as dashboard_router
 from .bilibili import router as bilibili_router  # 新增
+from .export import router as export_router  # 导出功能
 
 # 注册路由
 api_router.include_router(auth_router, prefix="/auth", tags=["认证"])
@@ -54,5 +55,6 @@ api_router.include_router(tasks_router, prefix="/tasks", tags=["任务管理"])
 api_router.include_router(video_tasks_router, prefix="/video-tasks", tags=["视频任务"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["仪表盘"])
 api_router.include_router(bilibili_router, prefix="/bilibili", tags=["Bilibili发布"])  # 新增
+api_router.include_router(export_router, prefix="/export", tags=["导出功能"])  # 导出功能
 
 __all__ = ["api_router"]
