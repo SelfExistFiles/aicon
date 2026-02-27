@@ -58,7 +58,7 @@ class CustomProvider(BaseLLMProvider):
         # 检查是否是 Gemini 图像模型
         if model and "gemini" in model.lower():
             # 调用 Gemini 专用方法，传递所有kwargs
-            gemini_response = await self.generate_image_gemini(prompt, **kwargs)
+            gemini_response = await self.generate_image_gemini(prompt,model, **kwargs)
 
             # 将 Gemini 响应包装成兼容格式
             return self._wrap_gemini_response(gemini_response)
@@ -154,13 +154,13 @@ class CustomProvider(BaseLLMProvider):
         except (KeyError, IndexError) as e:
             raise ValueError(f"无法从 Gemini 响应中提取图像数据: {e}")
 
-    async def generate_image_gemini(self, prompt: str,aspectRatio: str="16:9",imageSize: str="1K", **kwargs: Any):
+    async def generate_image_gemini(self, prompt: str,model:str,aspectRatio: str="16:9",imageSize: str="1K", **kwargs: Any):
         """
         Gemini 生成图像（携程异步版本）
         支持 reference_images 参数 (Persona)
         """
         base_url = self.base_url.replace("/v1", "")
-        url = f"{base_url}/v1beta/models/gemini-3-pro-image-preview:generateContent?key={self.api_key}"
+        url = f"{base_url}/v1beta/models/{model}:generateContent?key={self.api_key}"
         logger.info(f"Gemini 生成图像 URL: {url}")
         # 构造 prompt 部分
         parts = [{"text": prompt}]

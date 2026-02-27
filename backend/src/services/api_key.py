@@ -324,7 +324,7 @@ class APIKeyService(BaseService):
         # Custom provider - 返回预定义模型列表
         elif provider == 'custom':
             if model_type == "image":
-                return ['gemini-3-pro-image-preview']
+                return ['gemini-3.1-flash-image-preview','gemini-3-pro-image-preview']
             elif model_type == "audio":
                 return ['gpt-4o-mini-tts', 'tts-1']
             elif model_type == "video":
@@ -339,7 +339,7 @@ class APIKeyService(BaseService):
                     'veo_3_1-fast-components-4K'
                 ]
             else:  # text
-                return ['gemini-3-pro-preview','gemini-3-flash-preview', 'gpt-4o', 'gpt-4o-mini']
+                return ['gemini-3.1-pro-preview','gemini-3-pro-preview','gemini-3-flash-preview', 'gpt-4o', 'gpt-4o-mini']
         
         # Other provider defaults
         elif provider == 'openai':
