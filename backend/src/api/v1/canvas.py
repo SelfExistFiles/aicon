@@ -1,6 +1,7 @@
 from typing import Union
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user_required
@@ -25,9 +26,12 @@ from src.api.schemas.canvas import (
     CanvasPreviewItemsResponse,
     CanvasStageDocumentResponse,
     CanvasStageSnapshotResponse,
+    CanvasVideoTaskResponse,
+    CanvasVideoUploadResponse,
 )
 from src.core.database import get_db
 from src.models.user import User
+from src.services.api_key import APIKeyService
 from src.services.canvas import CanvasGenerationService, CanvasService
 from src.tasks.canvas import generate_canvas_image, generate_canvas_text, generate_canvas_video
 
@@ -75,6 +79,40 @@ def dispatch_canvas_image_generation(generation_id: str) -> str:
 
 def dispatch_canvas_video_generation(generation_id: str) -> str:
     return generate_canvas_video.delay(generation_id).id
+
+
+@router.get("/canvas-model-catalog")
+async def get_canvas_model_catalog(
+    current_user: User = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_db),
+):
+    api_key_service = APIKeyService(db)
+    api_keys, _ = await api_key_service.get_user_api_keys(
+        user_id=current_user.id,
+        key_status="active",
+        page=1,
+        size=100,
+    )
+
+    catalog = {
+        "text": [],
+        "image": [],
+        "video": [],
+    }
+
+    for model_type in catalog.keys():
+        seen = set()
+        for api_key in api_keys:
+            try:
+                models = await api_key_service.get_models(str(api_key.id), current_user.id, model_type)
+            except Exception:
+                continue
+            for model in models or []:
+                if model and model not in seen:
+                    seen.add(model)
+                    catalog[model_type].append(model)
+
+    return catalog
 
 
 @router.get("/canvas-documents", response_model=CanvasDocumentListResponse)
@@ -322,6 +360,7 @@ async def generate_text_for_canvas_item(
 ):
     service = CanvasGenerationService(db)
     _, generation = await service.prepare_text_generation(item_id, str(current_user.id), payload.model_dump(exclude_none=True))
+    await db.commit()
     task_id = dispatch_canvas_text_generation(str(generation.id))
     item, generation = await service.attach_task(str(generation.id), task_id)
     await db.commit()
@@ -341,6 +380,30 @@ async def generate_text_for_canvas_item(
     )
 
 
+@router.post("/canvas-items/{item_id}/generate-text/stream")
+async def stream_generate_text_for_canvas_item(
+    item_id: str,
+    payload: CanvasGenerateRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_db),
+):
+    service = CanvasGenerationService(db)
+
+    async def event_stream():
+        async for chunk in service.stream_text_generation(item_id, str(current_user.id), payload.model_dump(exclude_none=True)):
+            yield chunk
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/canvas-items/{item_id}/generate-image", response_model=CanvasGenerateResultResponse)
 async def generate_image_for_canvas_item(
     item_id: str,
@@ -350,6 +413,7 @@ async def generate_image_for_canvas_item(
 ):
     service = CanvasGenerationService(db)
     _, generation = await service.prepare_image_generation(item_id, str(current_user.id), payload.model_dump(exclude_none=True))
+    await db.commit()
     task_id = dispatch_canvas_image_generation(str(generation.id))
     item, generation = await service.attach_task(str(generation.id), task_id)
     await db.commit()
@@ -369,6 +433,30 @@ async def generate_image_for_canvas_item(
     )
 
 
+@router.post("/canvas-items/{item_id}/generate-image/stream")
+async def stream_generate_image_for_canvas_item(
+    item_id: str,
+    payload: CanvasGenerateRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_db),
+):
+    service = CanvasGenerationService(db)
+
+    async def event_stream():
+        async for chunk in service.stream_image_generation(item_id, str(current_user.id), payload.model_dump(exclude_none=True)):
+            yield chunk
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/canvas-items/{item_id}/generate-video", response_model=CanvasGenerateResultResponse)
 async def generate_video_for_canvas_item(
     item_id: str,
@@ -378,6 +466,7 @@ async def generate_video_for_canvas_item(
 ):
     service = CanvasGenerationService(db)
     _, generation = await service.prepare_video_generation(item_id, str(current_user.id), payload.model_dump(exclude_none=True))
+    await db.commit()
     task_id = dispatch_canvas_video_generation(str(generation.id))
     item, generation = await service.attach_task(str(generation.id), task_id)
     await db.commit()
@@ -394,6 +483,30 @@ async def generate_video_for_canvas_item(
                 "result_payload": generation.result_payload_json,
             }
         ),
+    )
+
+
+@router.post("/canvas-items/{item_id}/generate-video/stream")
+async def stream_generate_video_for_canvas_item(
+    item_id: str,
+    payload: CanvasGenerateRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_db),
+):
+    service = CanvasGenerationService(db)
+
+    async def event_stream():
+        async for chunk in service.stream_video_generation(item_id, str(current_user.id), payload.model_dump(exclude_none=True)):
+            yield chunk
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -446,4 +559,45 @@ async def apply_canvas_generation(
                 "result_payload": generation.result_payload_json,
             }
         ),
+    )
+
+
+@router.get("/canvas-documents/{document_id}/items/{item_id}/video-tasks/{task_id}", response_model=CanvasVideoTaskResponse)
+async def get_canvas_video_task(
+    document_id: str,
+    item_id: str,
+    task_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_db),
+):
+    service = CanvasGenerationService(db)
+    result = await service.get_video_task_status(document_id, item_id, task_id, str(current_user.id))
+    return CanvasVideoTaskResponse(
+        task_id=result["task_id"],
+        provider_task_id=result.get("provider_task_id"),
+        status=result["status"],
+        result_video_url=result.get("result_video_url"),
+        error_message=result.get("error_message"),
+        provider_payload=result.get("provider_payload") or {},
+        item=build_item_payload(result["item"]),
+    )
+
+
+@router.post("/canvas-documents/{document_id}/items/{item_id}/upload-video", response_model=CanvasVideoUploadResponse)
+async def upload_canvas_video(
+    document_id: str,
+    item_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_db),
+):
+    service = CanvasGenerationService(db)
+    result = await service.upload_video_override(document_id, item_id, str(current_user.id), file)
+    await db.commit()
+    return CanvasVideoUploadResponse(
+        success=True,
+        message="视频已上传到画布节点",
+        status="completed",
+        item=build_item_payload(result["item"]),
+        storage_info=result["storage_info"],
     )

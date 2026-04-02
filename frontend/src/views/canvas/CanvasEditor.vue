@@ -48,6 +48,9 @@
         :available-reference-items="availableReferenceItems"
         :global-reference-items="globalReferenceItems"
         :generating="Boolean(generationLoadingByItem[selectedItem.id])"
+        :api-key-options="apiKeyOptions"
+        :model-options="textModelOptions"
+        :model-options-loading="catalogLoading"
         @focus-item="setSelection"
         @handle-drag="handleStudioHandleDrag"
         @update:title="patchSelected({ title: $event })"
@@ -67,6 +70,9 @@
         :global-reference-items="globalReferenceItems"
         :generating="Boolean(generationLoadingByItem[selectedItem.id])"
         :uploading="uploading"
+        :api-key-options="apiKeyOptions"
+        :model-options="imageModelOptions"
+        :model-options-loading="catalogLoading"
         @focus-item="setSelection"
         @handle-drag="handleStudioHandleDrag"
         @update:title="patchSelected({ title: $event })"
@@ -88,6 +94,9 @@
         :reference-hint-text="videoReferenceHint"
         :generating="Boolean(generationLoadingByItem[selectedItem.id])"
         :uploading="uploading"
+        :api-key-options="apiKeyOptions"
+        :model-options="videoModelOptions"
+        :model-options-loading="catalogLoading"
         @focus-item="setSelection"
         @handle-drag="handleStudioHandleDrag"
         @update:title="patchSelected({ title: $event })"
@@ -117,6 +126,8 @@ import CanvasWorkbenchLayout from '@/components/canvas/CanvasWorkbenchLayout.vue
 import KonvaCanvasStage from '@/components/canvas/KonvaCanvasStage.vue'
 import { useCanvasEditor } from '@/composables/useCanvasEditor'
 import { useCanvasGeneration } from '@/composables/useCanvasGeneration'
+import { apiKeysService } from '@/services/apiKeys'
+import { canvasService } from '@/services/canvas'
 import { fileService } from '@/services/upload'
 import { buildPromptDerivatives } from '@/utils/promptMentionTokens'
 
@@ -124,6 +135,13 @@ const route = useRoute()
 const router = useRouter()
 const stageShellRef = ref(null)
 const uploading = ref(false)
+const catalogLoading = ref(false)
+const apiKeyOptions = ref([])
+const modelCatalog = ref({
+  text: [],
+  image: [],
+  video: []
+})
 
 const {
   loading,
@@ -251,6 +269,10 @@ const videoStudioDraft = computed(() => {
   }
 })
 
+const textModelOptions = computed(() => modelCatalog.value.text || [])
+const imageModelOptions = computed(() => modelCatalog.value.image || [])
+const videoModelOptions = computed(() => modelCatalog.value.video || [])
+
 const reverseConnectionMap = computed(() => {
   const map = new Map()
   connections.value.forEach((connection) => {
@@ -266,6 +288,34 @@ const buildReferenceItem = (item) => ({
   previewUrl: item.item_type === 'image' ? (item.content?.result_image_url || item.content?.reference_image_url || '') : '',
   previewText: item.item_type === 'text' ? String(item.content?.text || '') : ''
 })
+
+const hydrateCanvasConfigCatalog = async () => {
+  catalogLoading.value = true
+  try {
+    const [apiKeysResponse, modelCatalogResponse] = await Promise.all([
+      apiKeysService.getAPIKeys({ page: 1, size: 100, key_status: 'active' }),
+      canvasService.getModelCatalog()
+    ])
+
+    apiKeyOptions.value = (apiKeysResponse?.api_keys || []).map((key) => ({
+      value: key.id,
+      label: `${key.name} (${key.provider})`
+    }))
+
+    modelCatalog.value = {
+      text: Array.isArray(modelCatalogResponse?.text) ? modelCatalogResponse.text : [],
+      image: Array.isArray(modelCatalogResponse?.image) ? modelCatalogResponse.image : [],
+      video: Array.isArray(modelCatalogResponse?.video) ? modelCatalogResponse.video : []
+    }
+  } catch (error) {
+    console.error('Load canvas config catalog failed', error)
+    apiKeyOptions.value = []
+    modelCatalog.value = { text: [], image: [], video: [] }
+    ElMessage.warning('加载画布模型目录失败')
+  } finally {
+    catalogLoading.value = false
+  }
+}
 
 const buildItemMap = (itemsList = []) =>
   itemsList.reduce((accumulator, item) => {
@@ -692,29 +742,35 @@ const uploadMedia = async (file, type) => {
   if (!selectedItem.value || !file) return
   uploading.value = true
   try {
-    const formData = new FormData()
-    formData.append('file', file)
-    const response = await fileService.uploadFile(formData)
-    const fileUrl =
-      response?.storage_info?.url ||
-      response?.data?.url ||
-      response?.storage_info?.object_key ||
-      response?.data?.storage_key ||
-      ''
-    if (!fileUrl) {
-      ElMessage.warning('上传成功，但没有拿到可预览地址')
-      return
-    }
-
     if (type === 'image') {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fileService.uploadFile(formData)
+      const fileUrl =
+        response?.storage_info?.url ||
+        response?.data?.url ||
+        response?.storage_info?.object_key ||
+        response?.data?.storage_key ||
+        ''
+      if (!fileUrl) {
+        ElMessage.warning('上传成功，但没有拿到可预览地址')
+        return
+      }
       patchSelectedContent({
         reference_image_object_key: response?.storage_info?.object_key || response?.data?.storage_key || '',
         reference_image_url: fileUrl,
         result_image_url: selectedItem.value.content?.result_image_url || fileUrl
       })
     } else {
-      patchSelectedContent({
-        result_video_url: fileUrl
+      const formDataForCanvas = new FormData()
+      formDataForCanvas.append('file', file)
+      const canvasResponse = await canvasService.uploadVideo(document.value.id, selectedItem.value.id, formDataForCanvas)
+      updateItem(selectedItem.value.id, {
+        content: canvasResponse.item.content,
+        generation_config: canvasResponse.item.generation_config,
+        last_run_status: canvasResponse.item.last_run_status,
+        last_run_error: canvasResponse.item.last_run_error,
+        last_output: canvasResponse.item.last_output
       })
     }
     ElMessage.success('文件已上传')
@@ -767,6 +823,7 @@ watch(
 )
 
 onMounted(() => {
+  void hydrateCanvasConfigCatalog()
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 

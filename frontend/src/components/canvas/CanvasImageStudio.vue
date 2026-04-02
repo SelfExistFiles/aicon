@@ -50,8 +50,41 @@
 
       <div class="panel-toolbar">
         <div class="toolbar-left">
-          <input class="tool-input" :value="draft.apiKeyId" placeholder="API Key ID" @input="$emit('update:api-key-id', $event.target.value)" />
-          <input class="tool-input" :value="draft.model" placeholder="模型，可留空" @input="$emit('update:model-id', $event.target.value)" />
+          <el-select
+            class="tool-select"
+            :model-value="draft.apiKeyId"
+            placeholder="选择 API Key"
+            clearable
+            filterable
+            :disabled="generating || uploading"
+            @change="$emit('update:api-key-id', $event || '')"
+          >
+            <el-option
+              v-for="option in apiKeyOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+          <el-select
+            class="tool-select"
+            :model-value="draft.model"
+            placeholder="选择模型"
+            clearable
+            filterable
+            allow-create
+            default-first-option
+            :loading="modelOptionsLoading"
+            :disabled="generating || uploading"
+            @change="$emit('update:model-id', $event || '')"
+          >
+            <el-option
+              v-for="option in modelOptions"
+              :key="option"
+              :label="option"
+              :value="option"
+            />
+          </el-select>
         </div>
         <div class="toolbar-right">
           <button v-if="draft.resultImageUrl" class="history-action-btn" @click="$emit('history')">历史</button>
@@ -82,7 +115,10 @@ const props = defineProps({
   availableReferenceItems: { type: Array, default: () => [] },
   globalReferenceItems: { type: Array, default: () => [] },
   generating: { type: Boolean, default: false },
-  uploading: { type: Boolean, default: false }
+  uploading: { type: Boolean, default: false },
+  apiKeyOptions: { type: Array, default: () => [] },
+  modelOptions: { type: Array, default: () => [] },
+  modelOptionsLoading: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['commit', 'delete', 'focus-item', 'generate', 'handle-drag', 'history', 'update:api-key-id', 'update:model-id', 'update:title', 'update:tokens', 'upload'])
@@ -255,14 +291,8 @@ const handleFileChange = (event) => {
   justify-content: space-between;
 }
 
-.tool-input {
-  width: 160px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid rgba(34, 57, 98, 0.1);
-  background: #f8fafc;
-  color: #1f2a44;
-  padding: 0 10px;
+.tool-select {
+  width: 170px;
 }
 
 .generate-action-btn,

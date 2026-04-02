@@ -168,3 +168,19 @@ class CanvasGenerateResultResponse(SuccessResponse):
 class CanvasApplyGenerationResponse(SuccessResponse):
     item: CanvasItemPayload
     generation: CanvasGenerationResponse
+
+
+class CanvasVideoTaskResponse(BaseModel):
+    task_id: str
+    provider_task_id: Optional[str] = None
+    status: str
+    result_video_url: Optional[str] = None
+    error_message: Optional[str] = None
+    provider_payload: Dict[str, Any] = Field(default_factory=dict)
+    item: CanvasItemPayload
+
+
+class CanvasVideoUploadResponse(SuccessResponse):
+    status: str
+    item: CanvasItemPayload
+    storage_info: Dict[str, Any] = Field(default_factory=dict)

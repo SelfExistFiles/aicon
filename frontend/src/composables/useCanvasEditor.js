@@ -199,8 +199,11 @@ export function useCanvasEditor() {
     return created
   }
 
-  const updateItem = (itemId, patch) => {
+  const updateItem = (itemId, patch, options = {}) => {
     mergeItem(itemId, patch)
+    if (options.persist === false) {
+      return
+    }
     schedulePersist(itemId)
   }
 
