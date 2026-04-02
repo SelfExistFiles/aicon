@@ -33,13 +33,11 @@
 
       <CanvasWorkbenchLayout
         :title="document?.title || 'Canvas'"
-        :save-label="saving ? '保存中...' : dirty ? '保存变更' : '已保存'"
         :zoom-hint-text="zoomHintText"
         :zoom-text="`${Math.round(zoom * 100)}% 视图`"
         :link-mode-text="linkModeText"
         :show-launcher="!selectedItem"
         @back="router.push('/canvas')"
-        @save="handleSave"
         @create-item="createNode"
       />
 
@@ -599,6 +597,7 @@ const closeLinkMenu = () => {
 }
 
 const startLinkDrag = (item, handle, event) => {
+  event?.preventDefault?.()
   const pointer = getCanvasPointFromMouse(event)
   const startPoint = resolveHandleCanvasPoint(item, handle)
   linkDrag.value = {
@@ -617,6 +616,9 @@ const startLinkDrag = (item, handle, event) => {
 }
 
 const handleGlobalPointerMove = (event) => {
+  if (linkDrag.value || studioDrag.value) {
+    event?.preventDefault?.()
+  }
   const point = getCanvasPointFromMouse(event)
 
   if (linkDrag.value) {
@@ -741,12 +743,6 @@ const handleCreateLinkedNode = async (type) => {
   }
 }
 
-const handleSave = async () => {
-  syncSelectedStudioDraft()
-  await save()
-  ElMessage.success('画布已保存')
-}
-
 const handleRemoveSelectedConnection = async () => {
   if (!selectedConnection.value) return
   try {
@@ -852,6 +848,7 @@ const startStudioNodeDrag = (event) => {
     return
   }
 
+  event?.preventDefault?.()
   const point = getCanvasPointFromMouse(event)
   studioDrag.value = {
     itemId: selectedItem.value.id,
@@ -1103,6 +1100,8 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
   border-radius: 28px;
   background:
     radial-gradient(circle at top, rgba(79, 117, 255, 0.14), transparent 30%),

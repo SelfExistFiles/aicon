@@ -10,6 +10,129 @@ function decodeHtmlEntities(value = '') {
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(Number.parseInt(code, 16)))
 }
 
+function escapeHtml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function looksLikeRichTextHtml(value = '') {
+  return /<\/?[a-z][\s\S]*>/i.test(String(value || ''))
+}
+
+function applyInlineMarkdown(value = '') {
+  let html = escapeHtml(value)
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/(^|[^\*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+  return html
+}
+
+function convertMarkdownToRichHtml(value = '') {
+  const lines = String(value || '').replace(/\r\n?/g, '\n').split('\n')
+  const blocks = []
+  let paragraphLines = []
+  let listBuffer = null
+
+  const flushParagraph = () => {
+    if (!paragraphLines.length) {
+      return
+    }
+    blocks.push(`<p>${paragraphLines.map((line) => applyInlineMarkdown(line)).join('<br>')}</p>`)
+    paragraphLines = []
+  }
+
+  const flushList = () => {
+    if (!listBuffer?.items?.length) {
+      listBuffer = null
+      return
+    }
+    const tag = listBuffer.ordered ? 'ol' : 'ul'
+    blocks.push(`<${tag}>${listBuffer.items.map((item) => `<li>${applyInlineMarkdown(item)}</li>`).join('')}</${tag}>`)
+    listBuffer = null
+  }
+
+  lines.forEach((line) => {
+    const trimmed = line.trim()
+
+    if (!trimmed) {
+      flushParagraph()
+      flushList()
+      return
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/)
+    if (headingMatch) {
+      flushParagraph()
+      flushList()
+      const level = headingMatch[1].length
+      blocks.push(`<h${level}>${applyInlineMarkdown(headingMatch[2])}</h${level}>`)
+      return
+    }
+
+    const quoteMatch = trimmed.match(/^>\s?(.*)$/)
+    if (quoteMatch) {
+      flushParagraph()
+      flushList()
+      blocks.push(`<blockquote><p>${applyInlineMarkdown(quoteMatch[1])}</p></blockquote>`)
+      return
+    }
+
+    const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/)
+    if (orderedMatch) {
+      flushParagraph()
+      if (!listBuffer || !listBuffer.ordered) {
+        flushList()
+        listBuffer = { ordered: true, items: [] }
+      }
+      listBuffer.items.push(orderedMatch[1])
+      return
+    }
+
+    const unorderedMatch = trimmed.match(/^[-*+]\s+(.+)$/)
+    if (unorderedMatch) {
+      flushParagraph()
+      if (!listBuffer || listBuffer.ordered) {
+        flushList()
+        listBuffer = { ordered: false, items: [] }
+      }
+      listBuffer.items.push(unorderedMatch[1])
+      return
+    }
+
+    flushList()
+    paragraphLines.push(trimmed)
+  })
+
+  flushParagraph()
+  flushList()
+  return blocks.join('')
+}
+
+function convertPlainTextToRichHtml(value = '') {
+  const normalized = String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .trim()
+
+  if (!normalized) {
+    return ''
+  }
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => {
+      const content = paragraph
+        .split('\n')
+        .map((line) => escapeHtml(line))
+        .join('<br>')
+      return `<p>${content}</p>`
+    })
+    .join('')
+}
+
 function stripRichText(value = '') {
   let html = String(value || '')
     .replace(/\r\n?/g, '\n')
@@ -30,6 +153,20 @@ function stripRichText(value = '') {
   return html.trim()
 }
 
+export const resolveCanvasRichTextHtml = (item) => {
+  const value = String(item?.content?.text || item?.content?.text_preview || item?.content?.prompt || '')
+  if (!value.trim()) {
+    return ''
+  }
+  if (looksLikeRichTextHtml(value)) {
+    return value
+  }
+  if (/^\s*(#{1,3}\s|>\s|[-*+]\s|\d+\.\s|.*\*\*.*\*\*|.*`.+`)/m.test(value)) {
+    return convertMarkdownToRichHtml(value)
+  }
+  return convertPlainTextToRichHtml(value)
+}
+
 export const resolveCanvasTextPreview = (item) =>
   stripRichText(item?.content?.text || item?.content?.text_preview || item?.content?.prompt || '')
 
@@ -44,6 +181,38 @@ export const resolveCanvasStageMediaUrl = (item) => {
     return String(item.content?.result_video_url || '').trim()
   }
   return ''
+}
+
+const hasCanvasResultMedia = (item) => {
+  if (!item) {
+    return false
+  }
+
+  if (resolveCanvasStageMediaUrl(item)) {
+    return true
+  }
+
+  if (item.item_type === 'image') {
+    return Boolean(
+      String(
+        item.content?.result_image_object_key ||
+        item.last_output?.result_image_object_key ||
+        ''
+      ).trim()
+    )
+  }
+
+  if (item.item_type === 'video') {
+    return Boolean(
+      String(
+        item.content?.result_video_object_key ||
+        item.last_output?.result_video_object_key ||
+        ''
+      ).trim()
+    )
+  }
+
+  return false
 }
 
 const defaultTranslate = (_key, fallback) => fallback
@@ -89,7 +258,7 @@ export const resolveCanvasRunStatusMeta = (item, t = defaultTranslate) => {
   const lastOutput = item.last_output || {}
   const transientStatusIssue = lastOutput?.transient_status_issue === true
   const errorMessage = summarizeErrorMessage(item?.last_run_error || lastOutput?.status_fetch_error || '', t)
-  const hasMedia = Boolean(resolveCanvasStageMediaUrl(item))
+  const hasMedia = hasCanvasResultMedia(item)
 
   if (transientStatusIssue) {
     return {

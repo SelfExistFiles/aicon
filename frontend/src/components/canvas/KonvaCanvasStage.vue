@@ -42,6 +42,17 @@
     <div v-if="marqueeOverlayStyle" class="stage-selection-overlay" :style="marqueeOverlayStyle"></div>
 
     <div
+      v-for="item in textOverlayItems"
+      :key="`${item.id}-text-overlay`"
+      class="stage-text-overlay"
+      :class="{ 'stage-text-overlay--selected': selectedItemIds.includes(item.id) }"
+      :style="buildTextOverlayStyle(item)"
+    >
+      <div class="stage-text-overlay__title">{{ item.title || fallbackTitle(item.item_type) }}</div>
+      <div class="stage-text-overlay__body canvas-rich-text-content" v-html="item.richTextHtml"></div>
+    </div>
+
+    <div
       v-for="item in statusOverlayItems"
       :key="`${item.id}-status-overlay`"
       class="stage-status-chip"
@@ -73,6 +84,7 @@ import { resolveCanvasImageNodeSize } from '@/utils/canvasImageNodeLayout'
 import { resolveCanvasVideoNodeSize } from '@/utils/canvasVideoNodeLayout'
 import {
   releaseCanvasStageVideoEntry,
+  resolveCanvasRichTextHtml,
   resolveCanvasStageGeneratingMeta,
   resolveCanvasRunStatusMeta,
   resolveCanvasStageMediaUrl,
@@ -154,6 +166,15 @@ const itemLookup = computed(() =>
 
 const renderedItems = computed(() =>
   normalizedItems.value.filter((item) => String(item.id || '') !== String(props.editingItemId || ''))
+)
+
+const textOverlayItems = computed(() =>
+  renderedItems.value
+    .filter((item) => item.item_type === 'text')
+    .map((item) => ({
+      ...item,
+      richTextHtml: resolveCanvasRichTextHtml(item)
+    }))
 )
 
 const generatingOverlayItems = computed(() =>
@@ -300,7 +321,7 @@ const buildItemTitleConfig = (item) => ({
   fontStyle: 'bold',
   lineHeight: 1.2,
   ellipsis: true,
-  visible: !hasItemMedia(item)
+  visible: item.item_type !== 'text' && !hasItemMedia(item)
 })
 
 const buildItemPreviewConfig = (item) => ({
@@ -315,7 +336,13 @@ const buildItemPreviewConfig = (item) => ({
   lineHeight: item.item_type === 'text' ? 1.65 : 1.6,
   wrap: 'word',
   ellipsis: true,
-  visible: !hasItemMedia(item)
+  visible: item.item_type !== 'text' && !hasItemMedia(item)
+})
+
+const buildTextOverlayStyle = (item) => ({
+  width: `${item.width * stageScale.value}px`,
+  height: `${item.height * stageScale.value}px`,
+  transform: `translate(${item.position_x * stageScale.value + stagePosition.value.x}px, ${item.position_y * stageScale.value + stagePosition.value.y}px)`
 })
 
 const buildGeneratingOverlayStyle = (item) => ({
@@ -431,6 +458,7 @@ const handlePointerDown = (event) => {
   }
 
   if (target === stage && nativeEvent?.shiftKey) {
+    nativeEvent?.preventDefault?.()
     const pointer = stage.getPointerPosition()
     if (!pointer) {
       return
@@ -449,9 +477,11 @@ const handlePointerDown = (event) => {
   }
 
   if (target === stage) {
+    nativeEvent?.preventDefault?.()
     return
   }
 
+  nativeEvent?.preventDefault?.()
   stage.draggable(false)
   requestAnimationFrame(() => {
     stage.draggable(true)
@@ -673,6 +703,101 @@ watch(
 .konva-stage {
   width: 100%;
   height: 100%;
+}
+
+.stage-text-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 16px 18px;
+  box-sizing: border-box;
+  pointer-events: none;
+  overflow: hidden;
+  color: #1f2a44;
+}
+
+.stage-text-overlay__title {
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #1f2a44;
+}
+
+.stage-text-overlay__body {
+  max-height: calc(100% - 28px);
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #52607a;
+}
+
+.canvas-rich-text-content :deep(h1),
+.canvas-rich-text-content :deep(h2),
+.canvas-rich-text-content :deep(h3) {
+  margin: 0 0 10px;
+  line-height: 1.28;
+  color: #1f2a44;
+  letter-spacing: -0.01em;
+}
+
+.canvas-rich-text-content :deep(h1) {
+  font-size: 18px;
+}
+
+.canvas-rich-text-content :deep(h2) {
+  font-size: 16px;
+}
+
+.canvas-rich-text-content :deep(h3) {
+  font-size: 14px;
+}
+
+.canvas-rich-text-content :deep(p),
+.canvas-rich-text-content :deep(ul),
+.canvas-rich-text-content :deep(ol),
+.canvas-rich-text-content :deep(blockquote),
+.canvas-rich-text-content :deep(pre) {
+  margin: 0 0 8px;
+}
+
+.canvas-rich-text-content :deep(ul),
+.canvas-rich-text-content :deep(ol) {
+  padding-left: 18px;
+}
+
+.canvas-rich-text-content :deep(li) {
+  margin-bottom: 4px;
+}
+
+.canvas-rich-text-content :deep(blockquote) {
+  padding-left: 10px;
+  border-left: 3px solid rgba(75, 120, 255, 0.24);
+  color: #42526b;
+}
+
+.canvas-rich-text-content :deep(pre) {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.05);
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.canvas-rich-text-content :deep(code) {
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.94em;
+}
+
+.canvas-rich-text-content :deep(a) {
+  color: #355ce0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .konva-stage-placeholder {

@@ -341,7 +341,7 @@ class APIKeyService(BaseService):
                     'veo3.1-components-4k'
                 ]
             else:  # text
-                return ['gemini-3.1-pro-preview','gemini-3-pro-preview','gemini-3-flash-preview', 'gpt-4o', 'gpt-4o-mini']
+                return ['gemini-3.1-flash-lite-preview','gemini-3.1-pro-preview']
         
         # Other provider defaults
         elif provider == 'openai':

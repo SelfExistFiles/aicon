@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { resolveCanvasRunErrorSummary, resolveCanvasRunStatusMeta, resolveCanvasTextPreview, resolveCanvasStagePreviewText } from '@/utils/canvasStageMedia'
+import {
+  resolveCanvasRichTextHtml,
+  resolveCanvasRunErrorSummary,
+  resolveCanvasRunStatusMeta,
+  resolveCanvasTextPreview,
+  resolveCanvasStagePreviewText
+} from '@/utils/canvasStageMedia'
 
 describe('canvasStageMedia rich text preview', () => {
   it('preserves rich text structure in the text preview summary', () => {
@@ -26,6 +32,28 @@ describe('canvasStageMedia rich text preview', () => {
     expect(preview).toBe('Plain text content')
   })
 
+  it('converts plain text content into paragraph-based rich text html', () => {
+    const richHtml = resolveCanvasRichTextHtml({
+      content: {
+        text: 'Title line\n\nSecond paragraph'
+      }
+    })
+
+    expect(richHtml).toBe('<p>Title line</p><p>Second paragraph</p>')
+  })
+
+  it('preserves authored rich text html instead of escaping it into plain text', () => {
+    const richHtml = resolveCanvasRichTextHtml({
+      content: {
+        text: '<h1>Heading</h1><blockquote>Quoted</blockquote><ul><li>One</li></ul>'
+      }
+    })
+
+    expect(richHtml).toContain('<h1>Heading</h1>')
+    expect(richHtml).toContain('<blockquote>Quoted</blockquote>')
+    expect(richHtml).toContain('<ul><li>One</li></ul>')
+  })
+
   it('returns retrying status meta for transient video status fetch failures', () => {
     const meta = resolveCanvasRunStatusMeta({
       item_type: 'video',
@@ -50,6 +78,23 @@ describe('canvasStageMedia rich text preview', () => {
     })
 
     expect(preview).toBe('任务已入队，正在等待执行。')
+  })
+
+  it('treats completed video object keys as ready media even before a resolved url is present', () => {
+    const meta = resolveCanvasRunStatusMeta({
+      item_type: 'video',
+      last_run_status: 'completed',
+      content: {
+        result_video_object_key: 'uploads/final-video.mp4'
+      },
+      last_output: {}
+    })
+
+    expect(meta).toMatchObject({
+      tone: 'success',
+      label: '视频已生成',
+      detail: '结果已就绪，可直接预览。'
+    })
   })
 
   it('compresses raw json-like errors into a readable summary', () => {

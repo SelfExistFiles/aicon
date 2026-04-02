@@ -2,9 +2,8 @@
   <section class="canvas-list-page">
     <div class="hero-card">
       <div>
-        <p class="eyebrow">Canvas</p>
-        <h1>独立画布工作台</h1>
-        <p class="hero-copy">在这里维护自由节点图，不绑定项目和章节。</p>
+        <p class="eyebrow">无限画布</p>
+        <h1>无限画布</h1>
       </div>
       <el-button type="primary" size="large" @click="handleCreate" :loading="creating">
         新建画布
@@ -172,11 +171,6 @@ onMounted(loadDocuments)
 .hero-card h1 {
   margin-top: 8px;
   font-size: 34px;
-}
-
-.hero-copy {
-  margin-top: 10px;
-  color: var(--text-secondary);
 }
 
 .list-card {

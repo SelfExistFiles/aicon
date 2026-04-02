@@ -4,12 +4,6 @@
       <button class="brand-chip" type="button" @click="$emit('back')">
         <span class="brand-chip__title">{{ title }}</span>
       </button>
-
-      <div class="topbar-actions">
-        <button class="topbar-pill" type="button" @click="$emit('save')">
-          <span class="topbar-pill__value">{{ saveLabel }}</span>
-        </button>
-      </div>
     </div>
 
     <aside class="left-toolbar-panel">
@@ -104,7 +98,6 @@ import { Document, MagicStick, Operation, Picture, Plus, VideoPlay } from '@elem
 
 const props = defineProps({
   title: { type: String, default: '' },
-  saveLabel: { type: String, default: '保存' },
   zoomHintText: { type: String, default: '' },
   zoomText: { type: String, default: '画布提示' },
   linkModeText: { type: String, default: '' },
@@ -113,7 +106,7 @@ const props = defineProps({
   showLauncher: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['back', 'save', 'create-item'])
+const emit = defineEmits(['back', 'create-item'])
 
 const handleMenuCommand = (command) => {
   emit('create-item', command)
@@ -147,11 +140,14 @@ const handleMenuCommand = (command) => {
 }
 
 .brand-chip,
-.topbar-pill,
 .toolbar-btn {
   border: none;
-  cursor: pointer;
   pointer-events: auto;
+}
+
+.brand-chip,
+.toolbar-btn {
+  cursor: pointer;
 }
 
 .brand-chip {
@@ -165,24 +161,6 @@ const handleMenuCommand = (command) => {
   color: #1f2a44;
   font-size: 15px;
   font-weight: 600;
-}
-
-.topbar-pill {
-  display: inline-flex;
-  align-items: center;
-  height: 38px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(34, 57, 98, 0.1);
-  color: #1f2a44;
-  box-shadow: 0 10px 30px rgba(34, 57, 98, 0.08);
-}
-
-
-.topbar-pill__value {
-  font-size: 14px;
-  font-weight: 700;
 }
 
 .assistant-rail {

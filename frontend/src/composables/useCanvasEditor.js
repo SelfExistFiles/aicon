@@ -85,6 +85,7 @@ export function useCanvasEditor() {
   })
 
   const mergeItem = (itemId, patch) => {
+    const hasLastOutput = Object.prototype.hasOwnProperty.call(patch, 'last_output')
     items.value = items.value.map((item) =>
       item.id === itemId
         ? {
@@ -92,7 +93,7 @@ export function useCanvasEditor() {
           ...patch,
           content: patch.content ? { ...item.content, ...patch.content } : item.content,
           generation_config: patch.generation_config ? { ...item.generation_config, ...patch.generation_config } : item.generation_config,
-          last_output: patch.last_output ? { ...item.last_output, ...patch.last_output } : item.last_output
+          last_output: hasLastOutput ? { ...(patch.last_output || {}) } : item.last_output
         }
         : item
     )

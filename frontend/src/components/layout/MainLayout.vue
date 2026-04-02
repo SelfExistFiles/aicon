@@ -147,7 +147,7 @@ const breadcrumbs = computed(() => {
   const routeMap = {
     '/dashboard': { title: '控制台', icon: House },
     '/projects': { title: '项目管理', icon: Folder },
-    '/canvas': { title: 'Canvas', icon: Share },
+    '/canvas': { title: '无限画布', icon: Share },
     '/generation': { title: '视频生成', icon: Document },
     '/publish': { title: '内容发布', icon: Document },
     '/settings': { title: '系统设置', icon: Setting }

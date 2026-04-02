@@ -120,7 +120,7 @@ const menuItems = [
     badge: null
   },
   {
-    title: 'Canvas',
+    title: '无限画布',
     path: '/canvas',
     icon: Share,
     badge: null
