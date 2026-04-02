@@ -307,6 +307,101 @@ class TestCanvasDocumentApi:
         assert "url" not in request_payload["resolved_mentions"][0]["resolvedContent"]
 
     @pytest.mark.asyncio
+    async def test_save_graph_strips_expiring_mention_urls_and_rehydrates_on_read(self, client, auth_headers):
+        from src.models.canvas import CanvasItem
+
+        create_response = await client.post(
+            "/api/v1/canvas-documents",
+            headers=auth_headers,
+            json={"title": "Mention Snapshot Canvas"},
+        )
+        assert create_response.status_code == 201
+        canvas_id = create_response.json()["id"]
+
+        item_id = "21111111-1111-1111-1111-111111111111"
+        expired_preview = (
+            "http://localhost:9000/aicg-files/uploads/test-user/reference.png"
+            "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=expired"
+        )
+
+        storage_client = Mock()
+        storage_client.get_presigned_url.side_effect = lambda object_key: f"https://cdn.example.com/{object_key}"
+
+        with (
+            patch("src.services.canvas.get_storage_client", new_callable=AsyncMock, return_value=storage_client),
+            patch("src.api.v1.canvas.get_storage_client", new_callable=AsyncMock, return_value=storage_client),
+        ):
+            save_graph_response = await client.put(
+                f"/api/v1/canvas-documents/{canvas_id}/graph",
+                headers=auth_headers,
+                json={
+                    "items": [
+                        {
+                            "id": item_id,
+                            "item_type": "image",
+                            "title": "Image With Mention",
+                            "position_x": 0,
+                            "position_y": 0,
+                            "width": 360,
+                            "height": 220,
+                            "z_index": 1,
+                            "content": {
+                                "promptTokens": [
+                                    {
+                                        "type": "mention",
+                                        "mentionId": "mention-image-1",
+                                        "nodeId": "image-ref-1",
+                                        "nodeType": "image",
+                                        "nodeTitleSnapshot": "参考图",
+                                        "nodePreviewUrlSnapshot": expired_preview,
+                                    }
+                                ],
+                                "resolvedMentions": [
+                                    {
+                                        "mentionId": "mention-image-1",
+                                        "nodeId": "image-ref-1",
+                                        "nodeType": "image",
+                                        "nodeTitle": "参考图",
+                                        "status": "resolved",
+                                        "resolvedContent": {
+                                            "url": expired_preview,
+                                        },
+                                    }
+                                ],
+                            },
+                            "generation_config": {},
+                        }
+                    ],
+                    "connections": [],
+                },
+            )
+        assert save_graph_response.status_code == 200
+
+        async with TestSessionLocal() as session:
+            stored_item = await session.get(CanvasItem, item_id)
+            assert stored_item is not None
+            stored_prompt_tokens = stored_item.content_json["promptTokens"]
+            stored_resolved_mentions = stored_item.content_json["resolvedMentions"]
+            assert "nodePreviewUrlSnapshot" not in stored_prompt_tokens[0]
+            assert stored_prompt_tokens[0]["nodePreviewObjectKeySnapshot"] == "uploads/test-user/reference.png"
+            assert stored_resolved_mentions[0]["resolvedContent"]["object_key"] == "uploads/test-user/reference.png"
+            assert "url" not in stored_resolved_mentions[0]["resolvedContent"]
+
+        with patch("src.api.v1.canvas.get_storage_client", new_callable=AsyncMock, return_value=storage_client):
+            item_response = await client.get(
+                f"/api/v1/canvas-documents/{canvas_id}/items/{item_id}",
+                headers=auth_headers,
+            )
+
+        assert item_response.status_code == 200
+        payload = item_response.json()
+        prompt_tokens = payload["content"]["promptTokens"]
+        resolved_mentions = payload["content"]["resolvedMentions"]
+        assert prompt_tokens[0]["nodePreviewUrlSnapshot"] == "https://cdn.example.com/uploads/test-user/reference.png"
+        assert resolved_mentions[0]["resolvedContent"]["object_key"] == "uploads/test-user/reference.png"
+        assert resolved_mentions[0]["resolvedContent"]["url"] == "https://cdn.example.com/uploads/test-user/reference.png"
+
+    @pytest.mark.asyncio
     async def test_generate_video_creates_pending_generation_record(self, client, auth_headers):
         create_response = await client.post(
             "/api/v1/canvas-documents",

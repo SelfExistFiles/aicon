@@ -6,11 +6,12 @@ import uuid
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 
 from src.core.exceptions import NotFoundError
 from src.core.logging import get_logger
 from src.models.api_key import APIKey, APIKeyStatus
+from src.models.movie import MovieGenerationHistory
 from src.services.base import BaseService
 
 logger = get_logger(__name__)
@@ -195,6 +196,13 @@ class APIKeyService(BaseService):
 
         # 获取API密钥
         api_key = await self.get_api_key_by_id(key_id, user_id)
+
+        # 保留生成历史，但解除对已删除密钥的引用。
+        await self.db_session.execute(
+            update(MovieGenerationHistory)
+            .where(MovieGenerationHistory.api_key_id == api_key.id)
+            .values(api_key_id=None)
+        )
 
         # 删除
         await self.db_session.delete(api_key)

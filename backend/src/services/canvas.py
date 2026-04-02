@@ -51,21 +51,74 @@ MEDIA_URL_TO_OBJECT_KEY_FIELDS = {
 }
 
 
+def extract_object_key_from_media_url(media_url: Any) -> str:
+    value = str(media_url or "").strip()
+    if not value:
+        return ""
+    if value.startswith("uploads/"):
+        return value
+    parsed = urlparse(value)
+    path = unquote(parsed.path or "").lstrip("/")
+    bucket_prefix = f"{settings.MINIO_BUCKET_NAME}/"
+    if path.startswith(bucket_prefix):
+        path = path[len(bucket_prefix):]
+    if path.startswith("uploads/"):
+        return path
+    return ""
+
+
+def sanitize_prompt_tokens_for_storage(prompt_tokens: Any) -> List[Dict[str, Any]]:
+    if not isinstance(prompt_tokens, list):
+        return []
+
+    sanitized_tokens: List[Dict[str, Any]] = []
+    for token in prompt_tokens:
+        if not isinstance(token, dict):
+            continue
+        sanitized_token = dict(token)
+        if str(sanitized_token.get("type") or "").strip() == "mention":
+            object_key = str(
+                sanitized_token.get("nodePreviewObjectKeySnapshot")
+                or extract_object_key_from_media_url(sanitized_token.get("nodePreviewUrlSnapshot"))
+                or ""
+            ).strip()
+            if object_key:
+                sanitized_token["nodePreviewObjectKeySnapshot"] = object_key
+                sanitized_token.pop("nodePreviewUrlSnapshot", None)
+        sanitized_tokens.append(sanitized_token)
+    return sanitized_tokens
+
+
+def sanitize_resolved_mentions_for_storage(resolved_mentions: Any) -> List[Dict[str, Any]]:
+    if not isinstance(resolved_mentions, list):
+        return []
+
+    sanitized_mentions: List[Dict[str, Any]] = []
+    for mention in resolved_mentions:
+        if not isinstance(mention, dict):
+            continue
+        sanitized_mention = dict(mention)
+        resolved_content = sanitized_mention.get("resolvedContent")
+        if isinstance(resolved_content, dict):
+            sanitized_content = dict(resolved_content)
+            object_key = str(
+                sanitized_content.get("object_key")
+                or sanitized_content.get("objectKey")
+                or extract_object_key_from_media_url(sanitized_content.get("url"))
+                or ""
+            ).strip()
+            if object_key:
+                sanitized_content["object_key"] = object_key
+                sanitized_content.pop("objectKey", None)
+                sanitized_content.pop("url", None)
+            sanitized_mention["resolvedContent"] = sanitized_content
+        sanitized_mentions.append(sanitized_mention)
+    return sanitized_mentions
+
+
 class CanvasService(BaseService):
     def _extract_object_key_from_media_url(self, media_url: Any) -> str:
-        value = str(media_url or "").strip()
-        if not value:
-            return ""
-        if value.startswith("uploads/"):
-            return value
-        parsed = urlparse(value)
-        path = unquote(parsed.path or "").lstrip("/")
-        bucket_prefix = f"{settings.MINIO_BUCKET_NAME}/"
-        if path.startswith(bucket_prefix):
-            path = path[len(bucket_prefix):]
-        if path.startswith("uploads/"):
-            return path
-        return ""
+        return extract_object_key_from_media_url(media_url)
 
     async def list_documents(self, user_id: str, page: int = 1, size: int = 20) -> Tuple[List[CanvasDocument], int]:
         count_stmt = select(func.count(CanvasDocument.id)).where(CanvasDocument.user_id == ensure_canvas_uuid(user_id))
@@ -470,6 +523,12 @@ class CanvasService(BaseService):
         if not isinstance(content, dict):
             return {}
         sanitized = dict(content)
+        if "promptTokens" in sanitized:
+            sanitized["promptTokens"] = sanitize_prompt_tokens_for_storage(sanitized.get("promptTokens"))
+        if "resolvedMentions" in sanitized:
+            sanitized["resolvedMentions"] = sanitize_resolved_mentions_for_storage(sanitized.get("resolvedMentions"))
+        if "resolved_mentions" in sanitized:
+            sanitized["resolved_mentions"] = sanitize_resolved_mentions_for_storage(sanitized.get("resolved_mentions"))
         for url_field, object_key_field in MEDIA_URL_TO_OBJECT_KEY_FIELDS.items():
             if not sanitized.get(object_key_field):
                 extracted_object_key = self._extract_object_key_from_media_url(sanitized.get(url_field))
@@ -495,19 +554,7 @@ class CanvasService(BaseService):
 
 class CanvasGenerationService(BaseService):
     def _extract_object_key_from_media_url(self, media_url: Any) -> str:
-        value = str(media_url or "").strip()
-        if not value:
-            return ""
-        if value.startswith("uploads/"):
-            return value
-        parsed = urlparse(value)
-        path = unquote(parsed.path or "").lstrip("/")
-        bucket_prefix = f"{settings.MINIO_BUCKET_NAME}/"
-        if path.startswith(bucket_prefix):
-            path = path[len(bucket_prefix):]
-        if path.startswith("uploads/"):
-            return path
-        return ""
+        return extract_object_key_from_media_url(media_url)
 
     async def prepare_text_generation(self, item_id: str, user_id: str, request: Dict[str, Any]) -> Tuple[CanvasItem, CanvasItemGeneration]:
         return await self._prepare_generation(item_id, user_id, CanvasGenerationType.TEXT.value, request)
@@ -1021,7 +1068,9 @@ class CanvasGenerationService(BaseService):
         generation_type: str,
         request: Dict[str, Any],
     ) -> Dict[str, Any]:
-        prompt_tokens = self._normalize_prompt_tokens(request.get("prompt_tokens") or item.content_json.get("promptTokens") or [])
+        prompt_tokens = sanitize_prompt_tokens_for_storage(
+            self._normalize_prompt_tokens(request.get("prompt_tokens") or item.content_json.get("promptTokens") or [])
+        )
         resolved_mentions = self._normalize_resolved_mentions(
             request.get("resolved_mentions")
             or item.content_json.get("resolvedMentions")
@@ -1303,26 +1352,7 @@ class CanvasGenerationService(BaseService):
         return self._sanitize_reference_text(str(resolved_content.get("text") or ""))
 
     def _sanitize_resolved_mentions_for_storage(self, resolved_mentions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        sanitized_mentions: List[Dict[str, Any]] = []
-        for mention in resolved_mentions:
-            if not isinstance(mention, dict):
-                continue
-            sanitized_mention = dict(mention)
-            resolved_content = sanitized_mention.get("resolvedContent")
-            if isinstance(resolved_content, dict):
-                sanitized_content = dict(resolved_content)
-                object_key = str(
-                    sanitized_content.get("object_key")
-                    or sanitized_content.get("objectKey")
-                    or ""
-                ).strip()
-                if object_key:
-                    sanitized_content["object_key"] = object_key
-                    sanitized_content.pop("objectKey", None)
-                    sanitized_content.pop("url", None)
-                sanitized_mention["resolvedContent"] = sanitized_content
-            sanitized_mentions.append(sanitized_mention)
-        return sanitized_mentions
+        return sanitize_resolved_mentions_for_storage(resolved_mentions)
 
     def _resolve_style_reference_image_object_key(
         self,

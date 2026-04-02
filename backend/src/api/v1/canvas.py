@@ -33,7 +33,11 @@ from src.api.schemas.canvas import (
 from src.core.database import get_db
 from src.models.user import User
 from src.services.api_key import APIKeyService
-from src.services.canvas import CanvasGenerationService, CanvasService
+from src.services.canvas import (
+    CanvasGenerationService,
+    CanvasService,
+    extract_object_key_from_media_url,
+)
 from src.tasks.canvas import generate_canvas_image, generate_canvas_text, generate_canvas_video
 from src.utils.storage import get_storage_client
 
@@ -57,6 +61,50 @@ async def resolve_canvas_media_fields(payload: dict) -> dict:
     video_object_key = str(content.get("result_video_object_key") or "").strip()
     if video_object_key:
         content["result_video_url"] = storage_client.get_presigned_url(video_object_key)
+
+    prompt_tokens = content.get("promptTokens")
+    if isinstance(prompt_tokens, list):
+        resolved_tokens = []
+        for token in prompt_tokens:
+            if not isinstance(token, dict):
+                continue
+            resolved_token = dict(token)
+            if str(resolved_token.get("type") or "").strip() == "mention":
+                object_key = str(
+                    resolved_token.get("nodePreviewObjectKeySnapshot")
+                    or extract_object_key_from_media_url(resolved_token.get("nodePreviewUrlSnapshot"))
+                    or ""
+                ).strip()
+                if object_key:
+                    resolved_token["nodePreviewObjectKeySnapshot"] = object_key
+                    resolved_token["nodePreviewUrlSnapshot"] = storage_client.get_presigned_url(object_key)
+            resolved_tokens.append(resolved_token)
+        content["promptTokens"] = resolved_tokens
+
+    for mention_field in ("resolvedMentions", "resolved_mentions"):
+        mentions = content.get(mention_field)
+        if not isinstance(mentions, list):
+            continue
+        resolved_mentions = []
+        for mention in mentions:
+            if not isinstance(mention, dict):
+                continue
+            resolved_mention = dict(mention)
+            resolved_content = resolved_mention.get("resolvedContent")
+            if isinstance(resolved_content, dict):
+                resolved_payload = dict(resolved_content)
+                object_key = str(
+                    resolved_payload.get("object_key")
+                    or resolved_payload.get("objectKey")
+                    or extract_object_key_from_media_url(resolved_payload.get("url"))
+                    or ""
+                ).strip()
+                if object_key:
+                    resolved_payload["object_key"] = object_key
+                    resolved_payload["url"] = storage_client.get_presigned_url(object_key)
+                resolved_mention["resolvedContent"] = resolved_payload
+            resolved_mentions.append(resolved_mention)
+        content[mention_field] = resolved_mentions
 
     return content
 

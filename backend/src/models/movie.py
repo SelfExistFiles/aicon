@@ -44,7 +44,13 @@ class MovieGenerationHistory(BaseModel):
     
     # 生成参数
     model = Column(String(100), comment="使用的模型名称")
-    api_key_id = Column(PostgreSQLUUID(as_uuid=True), ForeignKey('api_keys.id'), nullable=True, index=True, comment="使用的API Key")
+    api_key_id = Column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey('api_keys.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True,
+        comment="使用的API Key",
+    )
     
     # 选择状态
     is_selected = Column(Boolean, default=False, index=True, comment="是否被选中使用")
