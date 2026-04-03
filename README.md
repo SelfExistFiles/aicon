@@ -171,7 +171,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ### 3. 关于中转站
 
-`https://api.aiconapi.me/v1` 是项目作者自部署的 OpenAI 兼容中转站，目标是提供长期可用、相对低价的默认接入方式，并非强制绑定。
+`https://api.aiconapi.me/v1` 是项目作者自部署的大模型兼容中转站，目标是提供长期可用、相对低价的默认接入方式，并非强制绑定。
 
 如果你已有自己的兼容网关、代理层或模型供应商，可以直接修改 Base URL，也可以进一步调整代码中的供应商兼容逻辑。
 
