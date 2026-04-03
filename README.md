@@ -1,96 +1,101 @@
-# AICG 内容分发平台
-
-> 🎬 **AI驱动的智能内容创作与分发平台** - 从文字到视频，一站式AI内容生产解决方案
->
-> 🚀 **官方在线站点现已上线内测：[https://aicon-studio.com/](https://aicon-studio.com/)**
->
-> 👨‍💻 **补充说明**：本人目前在广州地区求职中，具备丰富的 AI 应用开发经验包括不限Agent，RAG等相关技术，欢迎相关技术岗位与合作机会交流。
-
----
-
-## 📅 更新日志
-### [2026-04-03]
-- 🧠 **新增无限画布（Canvas）工作台**: 支持在同一画布中自由组织文本、图片、视频节点，通过连线表达上下游关系，把灵感梳理、提示词编排、素材生成和版本选择放到一个统一工作区完成。
-- 🖼️ **支持节点引用生成**: 文本/图片/视频节点可直接引用上游文本内容或图片结果，生成时自动提取可用上下文与参考图，减少手工复制 prompt 的成本。
-- 🕘 **支持生成历史回看与切换**: 图片和视频节点内置历史抽屉，可查看每次生成结果并一键应用到当前节点，便于快速比较不同模型和提示词版本。
-
-### [2026-02-28]
-- 🖼️ **新增Nano Banana 2图像模型**: 谷歌最新Nano Banana 2 以主流价格提供更高高质量的图片生成，生成时选择 `gemini-3.1-flash-image-preview`即可。
-- 📺**新增gemini-3.1-pro文本模型**：Gemini 3.1 是谷歌迄今为止最智能的模型系列，以先进的推理能力为基础。
-
-### [2026-01-23]
-- 🐳 **发布 Docker 镜像 v1.1.0**: 正式构建并发布版本号为 `v1.1.0` 的全功能容器镜像。
-- 🐞 **修复模型列表加载问题**: 修复了角色管理页面中模型列表类型加载错误的 Bug，现在能准确识别并加载文本/图片模型列表。
-- 🎬 **新增低价视频模型**: `custom` (couston) 供应商新增一系列 Veo 3.1 视频模型支持（高质量/快速模式/4K/叠图系列），大幅降低视频生成成本。
-
-### [2026-01-15]
-- 🚀 **官方在线站点上线**: AICON 商业项目版本已上线内测，访问 [aicon-studio.com](https://aicon-studio.com/) 立即体验。
-- 🎭 **角色参考图功能**: 支持上传参考图，让 AI 精准控制生成你喜欢的任何角色，角色一致性再进化。
-- 📺 **高级模型支持**: 新增 VEO3.1 4K 超高清模型支持，带来顶级的影视画质。
-- 📖 **文档更新**: 完善了 README 说明，增加了更新日志和交流群组。
-
----
-
-## 👥 交流与支持
-
-扫码加入 **AICON 内测交流群**, 获取最新动态、功能首发及技术支持。**我们诚邀各路创作者加入，共同打造最强 AI 电影工具！**
-
-<img src="docs/media/qr.jpg" width="200" alt="内测交流群">
-
----
+# AICON
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Vue](https://img.shields.io/badge/vue-3.x-green.svg)](https://vuejs.org/)
+[![Vue](https://img.shields.io/badge/vue-3.x-42b883.svg)](https://vuejs.org/)
 [![FastAPI](https://img.shields.io/badge/fastapi-latest-009688.svg)](https://fastapi.tiangolo.com/)
+[![Docker](https://img.shields.io/badge/deploy-docker-2496ED.svg)](https://www.docker.com/)
 
-## 🎥 成果展示
+AICON 是一套面向 AI 内容创作的全栈工作台，覆盖从文本理解、提示词组织、图片与视频生成，到素材管理和内容分发的完整流程，适用于 AI 电影、图文说、剧情短视频和可视化创作工作流等场景。
 
-**全自动AI电影生成演示** - 无需手动调整提示词和关键帧
+在线站点：[https://aicon-studio.com/](https://aicon-studio.com/)
 
-[![观看演示视频《静默战争》](https://img.shields.io/badge/🎬_观看演示-B站视频-00A1D6?style=for-the-badge&logo=bilibili)](https://www.bilibili.com/video/BV1DpvaB8EDE/?vd_source=2da8614f110387a6fe068f446424c748)
+技术栈：`FastAPI`、`Vue 3`、`PostgreSQL`、`Redis`、`Celery`、`MinIO`
 
-[![观看演示视频《艾尔登法环真人版预告》](https://img.shields.io/badge/🎬_观看演示-B站视频-00A1D6?style=for-the-badge&logo=bilibili)](https://www.bilibili.com/video/BV1w3igBpEXo)
+> 说明：本人目前在广州地区求职中，具备丰富的 AI 应用开发经验，包括 Agent、RAG 等方向，欢迎相关技术岗位与合作机会交流。
 
----
+## 目录
 
-## ✨ 核心功能
+- [项目概览](#项目概览)
+- [核心功能](#核心功能)
+- [适用场景](#适用场景)
+- [功能截图](#功能截图)
+- [Star 趋势](#star-趋势)
+- [演示](#演示)
+- [快速开始](#快速开始)
+- [使用说明](#使用说明)
+- [更新日志](#更新日志)
+- [交流与支持](#交流与支持)
+- [仓库结构](#仓库结构)
+- [相关文档](#相关文档)
+- [License](#license)
 
-### 🎥 AI 电影工作室 (Movie Studio)
-**革命性的全自动电影制作流程，将文学作品直接转化为视听大片。**
-- **🔍 智能剧本解析**：利用 LLM 深度理解文本，自动提取关键角色、高密度电影场景及精细分镜（Shot），并智能生成导演级的景别、构图与灯光描述。
-- **🎭 角色一致性 (Character Consistency)**：内置视觉一致性引擎，通过角色定妆照与参考图技术，确保同一角色在不同分镜中容貌高度统一，解决 AI 视频“换脸”痛点。
-- **🎬 动态过渡生成**：集成先进的视频生成模型，为相邻分镜自动创建平滑的过渡视频（Transition），支持推拉摇移等电影感镜头运动。
-- **🎵 视听一键合成**：背景音乐（BGM）管理、合成背景音效，一键输出符合主流视频平台标准的电影短片。
+## 项目概览
 
-### 🎨 AI 图文说生成器 (Picture Narration)
-**为短视频创作者打造的极速生产力工具。**
-- **📖 智能章节识别**：自动解析长文本结构，实现段落智能分割与核心语义提取。
-- **🎯 导演引擎 (Director Engine)**：AI 自动为每一段话匹配最适合的视觉提示词（Prompts）与构图设计。
-- **🖼️ 批量素材生产**：支持多模型并发调用，批量生成高质量配图与极具情感表现力的 TTS 语音。
-- **🎞️ 自动渲染合成**：图片、语音、字幕与背景音乐实时对齐，分钟级产出可直接发布的短视频。
+AICON 当前主要包含以下能力：
 
-### 🧩 无限画布工作台 (Canvas)
-**把想法、提示词、参考图和生成结果组织在同一个可视化工作流里。**
-- **📝 多节点协同创作**：支持文本、图片、视频三类节点自由摆放与编辑，适合做创意拆解、镜头规划和素材流转。
-- **🔗 连线驱动上下文引用**：节点之间可建立依赖关系，后续节点可以直接引用前序文本内容或图片结果作为生成上下文。
-- **🖼️ 引用图片与风格参考**：图片/视频节点支持引用上游图片、上传参考图或叠加风格参考，方便做角色延续、画面风格统一和视频首帧控制。
-- **📚 历史版本管理**：每个生成节点都可以查看历史结果、对比效果并一键切换当前版本，适合快速迭代 prompt 和模型参数。
-- **⚡ 轻量级画布预览**：画布打开时按节点类型返回轻量快照，兼顾大画布加载速度与节点级实时编辑体验。
+- `Movie Studio`：将长文本拆解为角色、场景、分镜、关键帧和过渡视频，形成完整的 AI 电影制作链路。
+- `Picture Narration`：面向图文说和短视频配图场景，支持章节拆分、提示词生成、配图生成、语音合成与渲染。
+- `Canvas`：将文本、图片、视频节点放在同一画布中编辑，通过节点引用和连线组织生成上下文。
+- `Distribution`：支持 Bilibili 等平台的自动化发布与内容分发。
 
-### 🚀 自动化分发
-- **📺 B站一键发布**：深度集成 Bilibili API，支持视频自动上传、标题摘要生成及标签智能推荐，打通创作到分发的最后一公里。
+项目特征：
 
----
+- 统一工作流：从文本到图片、视频、配音、发布尽量在一套系统内完成。
+- 可扩展供应商：支持自定义兼容 Base URL，可替换模型供应商。
+- 异步任务架构：适合长链路生成任务、批量任务与媒体处理任务。
+- 画布式创作：适合组织复杂 prompt、参考图和多轮生成结果。
 
-## 📸 功能截图
+## 核心功能
 
-### 无限画布
+### Movie Studio
 
+面向长文本到视频的自动化生产流程：
+
+- 智能解析文本，提取角色、场景与分镜结构。
+- 基于角色参考图维持角色一致性，降低跨镜头“换脸”问题。
+- 支持关键帧、过渡视频、背景音乐与音效合成。
+- 输出适合主流视频平台发布的完整内容资产。
+
+### Picture Narration
+
+面向短视频配图和图文说的批量生成能力：
+
+- 自动识别章节与段落结构。
+- 为段落生成匹配的视觉提示词与构图描述。
+- 并发生成图片、语音与字幕素材。
+- 组合为可直接发布的视频内容。
+
+### Canvas
+
+面向创意编排和工作流组织的可视化画布：
+
+- 支持文本、图片、视频节点自由排布与编辑。
+- 支持通过连线建立依赖关系，并在生成时引用上游内容。
+- 支持引用图片、上传参考图和叠加风格参考。
+- 支持查看生成历史并回切历史版本。
+- 打开画布时返回轻量快照，兼顾大画布加载和编辑体验。
+
+### Distribution
+
+面向发布环节的自动化能力：
+
+- 支持接入 Bilibili API。
+- 支持上传视频、生成标题摘要与标签建议。
+
+## 适用场景
+
+- 小说、剧本、设定集等长文本的影视化生成
+- AI 图文说、解说视频、剧情短视频的批量制作
+- 角色一致性要求较高的图像与视频生成
+- 提示词编排、参考图管理、多版本对比的创作流程
+
+## 功能截图
+
+### Canvas
 ![无限画布](docs/media/无限画布.png)
 
 ### 角色管理
-
 ![角色管理](docs/media/角色管理.png)
 
 ### 场景图生成
@@ -105,65 +110,137 @@
 ### 发布管理
 ![发布管理](docs/media/发布管理.png)
 
----
+## Star 趋势
 
-## 🚀 快速开始 (Docker部署)
+[![Star History Chart](https://api.star-history.com/svg?repos=869413421/aicon&type=Date)](https://www.star-history.com/#869413421/aicon&Date)
 
-使用Docker是最简单、最快速的部署方式。
+## 演示
+
+示例视频：
+
+- [《静默战争》演示](https://www.bilibili.com/video/BV1DpvaB8EDE/?vd_source=2da8614f110387a6fe068f446424c748)
+- [《艾尔登法环真人版预告》演示](https://www.bilibili.com/video/BV1w3igBpEXo)
+
+## 快速开始
+
+推荐使用 Docker 部署。
 
 ```bash
-# 1. 克隆项目
 git clone https://github.com/869413421/aicon.git
 cd aicon
 
-# 2. 配置环境变量
 cp .env.production.example .env.production
-# 编辑 .env.production, 修改必要配置
+# 编辑 .env.production，填写数据库、Redis、JWT、MinIO 等配置
 
-# 3. 启动所有服务
 docker-compose -f docker-compose.prod.yml up -d
-
-# 4. 访问应用
-# 前端: http://localhost
-# 后端API: http://localhost:8000
 ```
 
-📖 **详细部署文档**: 查看 [Docker部署指南](docs/docker-deployment-guide.md)
+默认访问地址：
 
----
+- 前端：`http://localhost`
+- 后端 API：`http://localhost:8000`
 
-## 📖 使用教程
+更多部署细节见 [docs/docker-deployment-guide.md](docs/docker-deployment-guide.md)。
+
+如需分别查看前后端说明，可进一步阅读：
+
+- [backend/README.md](backend/README.md)
+- [frontend/README.md](frontend/README.md)
+
+## 使用说明
 
 ### 1. 获取 API Key
-本系统支持多种 AI 模型,推荐使用中转站以获得更低成本和更强性能:
-- **注册地址**: [https://api.aiconapi.me/](https://api.aiconapi.me/)
-- 注册并购买额度后,在令牌(API Key)页面创建一个新的 Key。
-- 请按需购，用多少买多少。
+
+系统支持多种模型供应商；如果你希望直接体验项目当前默认兼容链路，可以使用：
+
+- 注册地址：[https://api.aiconapi.me/](https://api.aiconapi.me/)
+- 注册并购买额度后，在令牌页面创建 API Key
+- 建议按需购买
 
 ### 2. 配置系统 API Key
-进入系统后台,在 **API密钥管理** 页面点击添加:
-- **供应商/类型**: 选择 `自定义`
-- **API密钥**: 填入你在中转站获取的令牌
-- **Base URL**: 默认即为 `https://api.aiconapi.me/v1`
-> [!IMPORTANT]
-> **重点**: Base URL 结尾 **不可以带斜杠** (即不要写成 `v1/`),否则请求会报错。
 
-> [!NOTE]
-> `https://api.aiconapi.me/v1` 为项目作者自部署的 OpenAI 兼容中转站，定价策略偏向长期可用和相对低价，并非“割韭菜”。如果你已经有自己的 OpenAI 兼容服务、代理网关或其他模型供应商，可以直接在页面里改 Base URL，也可以自行修改代码做供应商兼容。
+进入系统后台，在“API 密钥管理”页面新增密钥：
 
-供应商兼容和默认地址相关代码位置如下:
-- 后端供应商工厂: `backend/src/services/provider/factory.py`
-- 后端自定义供应商封装: `backend/src/services/provider/custom_provider.py`
-- 前端 API 密钥管理页: `frontend/src/views/APIKeys.vue`
-- 前端设置页 API 密钥面板: `frontend/src/views/settings/APIKeysSettings.vue`
+- 供应商：选择 `自定义`
+- API 密钥：填写你自己的令牌
+- Base URL：默认值为 `https://api.aiconapi.me/v1`
 
-### 3. 开始创作 AI 电影
-1. **新建项目**: 在项目管理页面点击“新建项目”。
-2. **导入文本**: 建议选择 **“以章的方式”** 导入小说或剧本内容。
-3. **进入工作室**: 项目创建完成后,点击进入项目详情,选择 **“电影工作室”** 标签。
-4. **一键生成**: 按照角色提取 -> 场景提取 -> 分镜生成 -> 视频合成的顺序,开启你的创作之旅。
+注意：
 
----
+- Base URL 结尾不要带斜杠，例如不要写成 `https://api.aiconapi.me/v1/`
 
-## 📄 许可证
-本项目采用 Apache License 2.0 许可证 - 详见 [LICENSE](LICENSE) 文件
+### 3. 关于中转站
+
+`https://api.aiconapi.me/v1` 是项目作者自部署的 OpenAI 兼容中转站，目标是提供长期可用、相对低价的默认接入方式，并非强制绑定。
+
+如果你已有自己的兼容网关、代理层或模型供应商，可以直接修改 Base URL，也可以进一步调整代码中的供应商兼容逻辑。
+
+相关代码位置：
+
+- 后端供应商工厂：`backend/src/services/provider/factory.py`
+- 后端自定义供应商封装：`backend/src/services/provider/custom_provider.py`
+- 前端 API 密钥管理页：`frontend/src/views/APIKeys.vue`
+- 前端设置页 API 密钥面板：`frontend/src/views/settings/APIKeysSettings.vue`
+
+### 4. 开始创作
+
+基本流程如下：
+
+1. 新建项目
+2. 导入文本，建议按章节导入
+3. 进入项目详情页，使用 `Movie Studio` 或 `Canvas`
+4. 按角色提取、场景提取、分镜生成、素材生成和视频合成的顺序推进
+
+## 更新日志
+
+### 2026-04-03
+
+- 新增 `Canvas` 无限画布工作台
+- 支持节点引用生成
+- 支持生成历史回看与切换
+- JWT TOKEN 默认有效期调整为 `7` 天，即 `10080` 分钟
+- `custom` 供应商默认 Base URL 调整为 `https://api.aiconapi.me/v1`
+
+### 2026-02-28
+
+- 新增 `gemini-3.1-flash-image-preview` 图像模型支持
+- 新增 `gemini-3.1-pro` 文本模型支持
+
+### 2026-01-23
+
+- 发布 Docker 镜像 `v1.1.0`
+- 修复模型列表加载问题
+- `custom` 供应商新增一系列 Veo 3.1 视频模型支持
+
+### 2026-01-15
+
+- 在线站点上线内测
+- 新增角色参考图能力
+- 新增 `VEO3.1 4K` 模型支持
+- 补充项目文档与交流群说明
+
+## 交流与支持
+
+扫码加入 AICON 内测交流群，获取最新动态、功能更新与使用支持。
+
+<img src="docs/media/qr.jpg" width="200" alt="AICON 内测交流群">
+
+## 仓库结构
+
+```text
+aicon/
+├── backend/     # FastAPI 后端、任务队列、数据模型
+├── frontend/    # Vue 3 前端
+├── docs/        # 部署与开发文档
+└── README.md
+```
+
+## 相关文档
+
+- [backend/README.md](backend/README.md)
+- [frontend/README.md](frontend/README.md)
+- [docs/docker-deployment-guide.md](docs/docker-deployment-guide.md)
+
+## License
+
+本项目采用 [Apache License 2.0](LICENSE)。
