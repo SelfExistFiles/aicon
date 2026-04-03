@@ -85,7 +85,12 @@
 
 ## 📸 功能截图
 
+### 无限画布
+
+![无限画布](docs/media/无限画布.png)
+
 ### 角色管理
+
 ![角色管理](docs/media/角色管理.png)
 
 ### 场景图生成
@@ -139,9 +144,18 @@ docker-compose -f docker-compose.prod.yml up -d
 进入系统后台,在 **API密钥管理** 页面点击添加:
 - **供应商/类型**: 选择 `自定义`
 - **API密钥**: 填入你在中转站获取的令牌
-- **Base URL**: `https://api.aiconapi.me/v1`
+- **Base URL**: 默认即为 `https://api.aiconapi.me/v1`
 > [!IMPORTANT]
 > **重点**: Base URL 结尾 **不可以带斜杠** (即不要写成 `v1/`),否则请求会报错。
+
+> [!NOTE]
+> `https://api.aiconapi.me/v1` 为项目作者自部署的 OpenAI 兼容中转站，定价策略偏向长期可用和相对低价，并非“割韭菜”。如果你已经有自己的 OpenAI 兼容服务、代理网关或其他模型供应商，可以直接在页面里改 Base URL，也可以自行修改代码做供应商兼容。
+
+供应商兼容和默认地址相关代码位置如下:
+- 后端供应商工厂: `backend/src/services/provider/factory.py`
+- 后端自定义供应商封装: `backend/src/services/provider/custom_provider.py`
+- 前端 API 密钥管理页: `frontend/src/views/APIKeys.vue`
+- 前端设置页 API 密钥面板: `frontend/src/views/settings/APIKeysSettings.vue`
 
 ### 3. 开始创作 AI 电影
 1. **新建项目**: 在项目管理页面点击“新建项目”。

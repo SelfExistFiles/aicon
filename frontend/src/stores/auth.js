@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/auth'
 
+export function shouldLogoutOnCurrentUserError(error) {
+  return error?.response?.status === 401
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
   const user = ref(null)
@@ -43,7 +47,9 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = user_data
       return user_data
     } catch (error) {
-      logout()
+      if (shouldLogoutOnCurrentUserError(error)) {
+        logout()
+      }
       throw error
     }
   }

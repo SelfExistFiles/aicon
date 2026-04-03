@@ -153,7 +153,7 @@
         <el-form-item label="Base URL" prop="base_url">
           <el-input
             v-model="formData.base_url"
-            placeholder="可选，例如: https://api.openai.com/v1"
+            placeholder="默认: https://api.aiconapi.me/v1，可按需改成你自己的兼容地址"
           />
         </el-form-item>
         <el-form-item label="状态" prop="status" v-if="isEdit">
@@ -179,6 +179,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Key } from '@element-plus/icons-vue'
 import { apiKeysService, apiKeyUtils } from '@/services/apiKeys'
 
+const DEFAULT_CUSTOM_BASE_URL = 'https://api.aiconapi.me/v1'
+
 // 状态
 const loading = ref(false)
 const submitting = ref(false)
@@ -198,7 +200,7 @@ const formData = reactive({
   name: '',
   provider: '',
   api_key: '',
-  base_url: '',
+  base_url: DEFAULT_CUSTOM_BASE_URL,
   status: 'active'
 })
 
@@ -252,7 +254,7 @@ const showAddDialog = () => {
     name: '',
     provider: '',
     api_key: '',
-    base_url: '',
+    base_url: DEFAULT_CUSTOM_BASE_URL,
     status: 'active'
   })
   dialogVisible.value = true

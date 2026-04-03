@@ -188,12 +188,33 @@ describe('auth store', () => {
       authStore.token = 'some-token'
 
       const { authService } = await import('@/services/auth')
-      authService.getCurrentUser.mockRejectedValue(new Error('Token无效'))
+      authService.getCurrentUser.mockRejectedValue({
+        response: { status: 401 },
+        message: 'Token无效'
+      })
 
-      await expect(authStore.getCurrentUser()).rejects.toThrow('Token无效')
+      await expect(authStore.getCurrentUser()).rejects.toMatchObject({
+        response: { status: 401 }
+      })
 
       expect(authStore.token).toBe('')
       expect(authStore.user).toBe(null)
+    })
+
+    it('应该在非401错误时保留登录状态', async () => {
+      authStore.token = 'some-token'
+
+      const { authService } = await import('@/services/auth')
+      authService.getCurrentUser.mockRejectedValue({
+        response: { status: 500 },
+        message: '服务器错误'
+      })
+
+      await expect(authStore.getCurrentUser()).rejects.toMatchObject({
+        response: { status: 500 }
+      })
+
+      expect(authStore.token).toBe('some-token')
     })
   })
 

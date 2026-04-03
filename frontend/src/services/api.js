@@ -3,6 +3,23 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
 
+const SESSION_CHECK_PATHS = ['/users/me', '/auth/verify-token']
+
+export function shouldForceLogoutOnUnauthorized(error) {
+  const status = error?.response?.status
+  const url = String(error?.config?.url || '')
+
+  if (status !== 401) {
+    return false
+  }
+
+  if (url.includes('/auth/login')) {
+    return false
+  }
+
+  return SESSION_CHECK_PATHS.some((path) => url.includes(path))
+}
+
 // 创建axios实例
 const api = axios.create({
   baseURL: '/api/v1',
@@ -46,12 +63,13 @@ api.interceptors.response.use(
           if (config.url && config.url.includes('/auth/login')) {
             // 登录失败，显示服务器返回的具体错误信息
             ElMessage.error(data.detail || '用户名或密码错误')
-          } else {
-            // 其他接口的401错误，表示登录已过期
+          } else if (shouldForceLogoutOnUnauthorized(error)) {
             const authStore = useAuthStore()
             authStore.logout()
             router.push({ name: 'Login', query: { redirect: router.currentRoute.value.fullPath } })
             ElMessage.error('登录已过期，请重新登录')
+          } else {
+            ElMessage.error(data.detail || '认证失败，请稍后重试')
           }
           break
 

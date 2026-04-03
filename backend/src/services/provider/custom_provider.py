@@ -27,7 +27,7 @@ class CustomProvider(BaseLLMProvider):
         self,
         api_key: str,
         max_concurrency: int = 5,
-        base_url: str = "https://api.siliconflow.cn/v1",
+        base_url: str = "https://api.aiconapi.me/v1",
     ):
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.base_url = base_url

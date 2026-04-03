@@ -25,7 +25,7 @@ class ProviderFactory:
                 return SiliconFlowProvider(api_key, kwargs.get("max_concurrency", 5))
             case "custom":
                 return CustomProvider(api_key, kwargs.get("max_concurrency", 5),
-                                      kwargs.get("base_url", "https://api.siliconflow.cn/v1"))
+                                      kwargs.get("base_url", "https://api.aiconapi.me/v1"))
             case "vectorengine":
                 from .vector_engine_provider import VectorEngineProvider
                 return VectorEngineProvider(api_key, kwargs.get("base_url", "https://api.vectorengine.ai/v1")) # type: ignore
