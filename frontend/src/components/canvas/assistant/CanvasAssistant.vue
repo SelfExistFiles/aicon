@@ -1,6 +1,7 @@
 <template>
   <aside
     class="canvas-assistant"
+    :class="{ 'canvas-assistant--streaming': isStreaming }"
     style="user-select: text; -webkit-user-select: text"
   >
     <CanvasAssistantHeader
@@ -124,6 +125,10 @@
     -webkit-user-select: text;
   }
 
+  .canvas-assistant--streaming {
+    animation: canvas-assistant-breathe 2.8s ease-in-out infinite;
+  }
+
   .canvas-assistant__timeline {
     flex: 1;
     min-height: 0;
@@ -131,5 +136,19 @@
 
   .canvas-assistant__composer {
     flex: 0 0 auto;
+  }
+
+  @keyframes canvas-assistant-breathe {
+    0%,
+    100% {
+      box-shadow:
+        inset 1px 0 0 rgba(255, 255, 255, 0.6),
+        0 0 0 0 rgba(75, 120, 255, 0.08);
+    }
+    50% {
+      box-shadow:
+        inset 1px 0 0 rgba(255, 255, 255, 0.72),
+        0 0 0 10px rgba(75, 120, 255, 0);
+    }
   }
 </style>

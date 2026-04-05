@@ -163,3 +163,58 @@ async def test_generation_submit_tool_accepts_target_item_id_and_string_payload(
     )
     assert result["ok"] is True
     assert result["effect"]["needs_refresh"] is True
+
+
+@pytest.mark.asyncio
+async def test_canvas_create_items_tool_batches_nodes_with_source_relations() -> None:
+    execution_tools = AsyncMock()
+    execution_tools.create_items.return_value = {
+        "items": [
+            {"id": "shot-1", "item_type": "text", "title": "分镜1"},
+            {"id": "shot-2", "item_type": "text", "title": "分镜2"},
+        ],
+        "references": [
+            {"item_id": "shot-1", "source_item_id": "script-1"},
+            {"item_id": "shot-2", "source_item_id": "script-1"},
+        ],
+        "connections": [
+            {"id": "conn-1", "source_item_id": "script-1", "target_item_id": "shot-1"},
+            {"id": "conn-2", "source_item_id": "script-1", "target_item_id": "shot-2"},
+        ],
+        "effect": {
+            "mutated": True,
+            "created_item_ids": ["shot-1", "shot-2"],
+            "created_connection_ids": ["conn-1", "conn-2"],
+            "summary": "已批量创建节点。",
+        },
+    }
+
+    factory = CanvasAssistantAgentFactory(
+        db_session=AsyncMock(),
+        inspection_tools=AsyncMock(),
+        canvas_execution_tools=execution_tools,
+        generation_tools=AsyncMock(),
+    )
+    tools = factory._build_tools()
+    create_tool = next(tool for tool in tools if tool.name == "canvas_create_items")
+
+    result = await create_tool.ainvoke(
+        {
+            "source_item_id": "script-1",
+            "items": [
+                {"node_type": "text", "title": "分镜1", "purpose": "镜头描述", "content": "场景一"},
+                {"node_type": "text", "title": "分镜2", "purpose": "镜头描述", "content": "场景二"},
+            ],
+            "layout": {"mode": "column"},
+        },
+        config={"configurable": {"document_id": "doc-1", "user_id": "user-1"}},
+    )
+
+    execution_tools.create_items.assert_awaited_once()
+    args = execution_tools.create_items.await_args.args
+    assert args[0:2] == ("doc-1", "user-1")
+    assert args[3] == {"mode": "column"}
+    assert args[4] == "script-1"
+    assert result["ok"] is True
+    assert result["effect"]["created_item_ids"] == ["shot-1", "shot-2"]
+    assert result["effect"]["created_connection_ids"] == ["conn-1", "conn-2"]

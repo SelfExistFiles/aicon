@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { buildCanvasAssistantTimelineItems } from '@/composables/useCanvasAssistantTimeline'
+import { buildCanvasAssistantTimelineItems, reduceCanvasAssistantEventLog } from '@/composables/useCanvasAssistantTimeline'
 
 describe('useCanvasAssistantTimeline', () => {
   it('builds timeline directly from eventLog reducer source', () => {
@@ -93,7 +93,6 @@ describe('useCanvasAssistantTimeline', () => {
   })
 
   it('uses top-level tool effect to derive refresh requests', async () => {
-    const { reduceCanvasAssistantEventLog } = await import('@/composables/useCanvasAssistantTimeline')
     const reduced = reduceCanvasAssistantEventLog({
       eventLog: [
         {
@@ -113,5 +112,26 @@ describe('useCanvasAssistantTimeline', () => {
       scopes: ['document'],
       effect: { mutated: true, needs_refresh: true, refresh_scopes: ['document'] }
     })
+  })
+
+  it('keeps streaming status while a turn is active so UI animations can render', () => {
+    const reduced = reduceCanvasAssistantEventLog({
+      eventLog: [
+        { kind: 'session', sessionId: 'session-1' },
+        {
+          kind: 'tool',
+          toolCall: {
+            id: 'tool-1',
+            toolName: 'canvas.find_items',
+            status: 'requested',
+            args: { query: '剧本' }
+          }
+        }
+      ]
+    })
+
+    expect(reduced.status).toBe('streaming')
+    expect(reduced.isStreaming).toBe(true)
+    expect(reduced.activeTool).toBe('canvas.find_items')
   })
 })

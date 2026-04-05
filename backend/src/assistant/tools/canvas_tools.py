@@ -146,12 +146,208 @@ class CanvasAssistantCanvasExecutionTools:
         effect = ToolEffect(mutated=True, created_item_ids=[item_id] if item_id else [], summary="已创建节点。")
         return {"item": created, "effect": effect}
 
+    def _normalize_batch_item(self, item: dict[str, Any], *, source_item_id: str = "", index: int = 0) -> dict[str, Any]:
+        payload = dict(item or {})
+        item_type = str(payload.get("item_type") or payload.get("node_type") or "text").strip() or "text"
+        content = payload.get("content")
+        if isinstance(content, str):
+            content = {"text": content}
+        elif not isinstance(content, dict):
+            content = {}
+
+        references = list(payload.get("references") or [])
+        if source_item_id and not references:
+            references = [source_item_id]
+        if references:
+            content["assistant_references"] = [
+                {"item_id": str(reference if not isinstance(reference, dict) else reference.get("item_id") or "").strip()}
+                if not isinstance(reference, dict)
+                else {
+                    "item_id": str(reference.get("item_id") or reference.get("source_item_id") or "").strip(),
+                    **{key: value for key, value in reference.items() if key not in {"item_id", "source_item_id"}},
+                }
+                for reference in references
+                if str(reference if not isinstance(reference, dict) else reference.get("item_id") or reference.get("source_item_id") or "").strip()
+            ]
+        purpose = str(payload.get("purpose") or "").strip()
+        if purpose:
+            content.setdefault("assistant_purpose", purpose)
+        next_step = str(payload.get("next_step") or "").strip()
+        if next_step:
+            content.setdefault("assistant_next_step", next_step)
+
+        return {
+            "client_id": str(payload.get("client_id") or payload.get("key") or f"item-{index + 1}").strip(),
+            "title": str(payload.get("title") or "").strip(),
+            "item_type": item_type,
+            "content": content,
+            "width": payload.get("width", 320),
+            "height": payload.get("height", 220),
+            "z_index": payload.get("z_index", index),
+            "connections": list(payload.get("connections") or []),
+        }
+
+    def _apply_layout(self, items: list[dict[str, Any]], layout: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        if not items:
+            return []
+        layout = dict(layout or {})
+        mode = str(layout.get("mode") or "column").strip().lower()
+        start_x = float(layout.get("start_x", 80))
+        start_y = float(layout.get("start_y", 80))
+        gap_x = float(layout.get("gap_x", 48))
+        gap_y = float(layout.get("gap_y", 32))
+        columns = max(1, int(layout.get("columns", 2 if mode == "grid" else 1)))
+        positioned: list[dict[str, Any]] = []
+        for index, item in enumerate(items):
+            width = float(item.get("width", 320) or 320)
+            height = float(item.get("height", 220) or 220)
+            if mode == "row":
+                position_x = start_x + index * (width + gap_x)
+                position_y = start_y
+            elif mode == "grid":
+                row = index // columns
+                col = index % columns
+                position_x = start_x + col * (width + gap_x)
+                position_y = start_y + row * (height + gap_y)
+            else:
+                position_x = start_x
+                position_y = start_y + index * (height + gap_y)
+            positioned.append(
+                {
+                    **item,
+                    "position_x": item.get("position_x", position_x),
+                    "position_y": item.get("position_y", position_y),
+                }
+            )
+        return positioned
+
+    async def create_items(
+        self,
+        document_id: str,
+        user_id: str,
+        items: list[dict[str, Any]],
+        layout: dict[str, Any] | None = None,
+        source_item_id: str = "",
+    ) -> dict[str, Any]:
+        normalized_items = [
+            self._normalize_batch_item(item, source_item_id=str(source_item_id or "").strip(), index=index)
+            for index, item in enumerate(list(items or []))
+        ]
+        positioned_items = self._apply_layout(normalized_items, layout)
+
+        created_items: list[Any] = []
+        created_connections: list[Any] = []
+        references: list[dict[str, Any]] = []
+        client_id_to_item_id: dict[str, str] = {}
+
+        for item in positioned_items:
+            created = item if self.service is None else await self.service.create_item(
+                document_id,
+                user_id,
+                {
+                    "title": item.get("title", ""),
+                    "item_type": item.get("item_type", "text"),
+                    "content": item.get("content", {}),
+                    "position_x": item.get("position_x", 0),
+                    "position_y": item.get("position_y", 0),
+                    "width": item.get("width", 320),
+                    "height": item.get("height", 220),
+                    "z_index": item.get("z_index", 0),
+                },
+            )
+            created_items.append(created)
+            created_item_id = str(created.get("id") or "") if isinstance(created, dict) else str(getattr(created, "id", ""))
+            client_id_to_item_id[str(item.get("client_id") or "").strip()] = created_item_id
+
+            for reference in list((item.get("content") or {}).get("assistant_references") or []):
+                references.append(
+                    {
+                        "item_id": created_item_id,
+                        "source_item_id": str(reference.get("item_id") or "").strip(),
+                    }
+                )
+
+        if self.service is not None:
+            for index, item in enumerate(positioned_items):
+                source_id = client_id_to_item_id.get(str(item.get("client_id") or "").strip(), "")
+                if source_item_id and source_id:
+                    connection = await self.service.create_connection(
+                        document_id,
+                        user_id,
+                        {
+                            "source_item_id": source_item_id,
+                            "target_item_id": source_id,
+                            "source_handle": "right",
+                            "target_handle": "left",
+                        },
+                    )
+                    created_connections.append(connection)
+                for raw_connection in list(item.get("connections") or []):
+                    connection_data = raw_connection if isinstance(raw_connection, dict) else {"target_item_id": raw_connection}
+                    target_item_id = str(
+                        connection_data.get("target_item_id")
+                        or client_id_to_item_id.get(str(connection_data.get("target_client_id") or "").strip(), "")
+                        or ""
+                    ).strip()
+                    if not source_id or not target_item_id:
+                        continue
+                    connection = await self.service.create_connection(
+                        document_id,
+                        user_id,
+                        {
+                            "source_item_id": source_id,
+                            "target_item_id": target_item_id,
+                            "source_handle": str(connection_data.get("source_handle") or "right"),
+                            "target_handle": str(connection_data.get("target_handle") or "left"),
+                        },
+                    )
+                    created_connections.append(connection)
+
+        await self._commit_if_possible()
+        created_item_ids = [
+            str(item.get("id") or "") if isinstance(item, dict) else str(getattr(item, "id", ""))
+            for item in created_items
+        ]
+        created_connection_ids = [
+            str(connection.get("id") or "") if isinstance(connection, dict) else str(getattr(connection, "id", ""))
+            for connection in created_connections
+        ]
+        effect = ToolEffect(
+            mutated=bool(created_item_ids or created_connection_ids),
+            created_item_ids=[item_id for item_id in created_item_ids if item_id],
+            created_connection_ids=[connection_id for connection_id in created_connection_ids if connection_id],
+            summary="已批量创建节点。",
+        )
+        return {
+            "items": created_items,
+            "references": references,
+            "connections": created_connections,
+            "effect": effect,
+        }
+
     async def update_item(self, document_id: str, user_id: str, item_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         updated = {"id": item_id, **patch} if self.service is None else await self.service.update_item(document_id, item_id, user_id, patch)
         await self._commit_if_possible()
         normalized_id = str(updated.get("id") or "") if isinstance(updated, dict) else str(getattr(updated, "id", item_id))
         effect = ToolEffect(mutated=True, updated_item_ids=[normalized_id] if normalized_id else [], summary="已更新节点。")
         return {"item": updated, "effect": effect}
+
+    async def update_items(self, document_id: str, user_id: str, updates: list[dict[str, Any]]) -> dict[str, Any]:
+        updated_items: list[Any] = []
+        updated_item_ids: list[str] = []
+        for update in list(updates or []):
+            item_id = str(update.get("item_id") or "").strip()
+            patch = dict(update.get("patch") or {})
+            if not item_id or not patch:
+                continue
+            updated = {"id": item_id, **patch} if self.service is None else await self.service.update_item(document_id, item_id, user_id, patch)
+            updated_items.append(updated)
+            normalized_id = str(updated.get("id") or "") if isinstance(updated, dict) else str(getattr(updated, "id", item_id))
+            if normalized_id:
+                updated_item_ids.append(normalized_id)
+        await self._commit_if_possible()
+        effect = ToolEffect(mutated=bool(updated_item_ids), updated_item_ids=updated_item_ids, summary="已批量更新节点。")
+        return {"items": updated_items, "effect": effect}
 
     async def delete_items(self, document_id: str, user_id: str, item_ids: list[str]) -> dict[str, Any]:
         if self.service is not None:

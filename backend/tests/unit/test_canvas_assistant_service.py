@@ -314,3 +314,155 @@ async def test_chat_returns_agent_error_event_when_official_stream_fails() -> No
     ]
     assert "stream crashed" in result.events[1]["data"]["message"]
     assert "stream crashed" in result.message
+
+
+@pytest.mark.asyncio
+async def test_chat_stops_when_same_failed_tool_call_repeats() -> None:
+    store = AsyncMock()
+    store.get_or_create.return_value = CanvasAgentSession(
+        session_id="session-1",
+        user_id="user-1",
+        document_id="doc-1",
+    )
+    inspection_tools = AsyncMock()
+    inspection_tools.inspect_graph.return_value = {
+        "document": {"id": "doc-1"},
+        "items": [{"id": "script-1", "title": "剧本"}],
+        "connections": [],
+        "counts": {"items": 1, "connections": 0},
+    }
+    fake_graph = _FakeAgentGraph(
+        chunks=[
+            {
+                "agent": {
+                    "messages": [
+                        {
+                            "id": "assistant-1",
+                            "type": "ai",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "name": "generation_submit",
+                                    "args": {"item_id": "script-1", "kind": "text", "payload": {"prompt": "生成八个分镜"}},
+                                    "type": "tool_call",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+            {
+                "tools": {
+                    "messages": [
+                        {
+                            "tool_call_id": "call-1",
+                            "name": "generation_submit",
+                            "content": "Error invoking tool 'generation_submit' with kwargs {'item_id': 'script-1'} with error: 缺少 api_key_id",
+                        }
+                    ]
+                }
+            },
+            {
+                "agent": {
+                    "messages": [
+                        {
+                            "id": "assistant-2",
+                            "type": "ai",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call-2",
+                                    "name": "generation_submit",
+                                    "args": {"item_id": "script-1", "kind": "text", "payload": {"prompt": "生成八个分镜"}},
+                                    "type": "tool_call",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+        ]
+    )
+    agent_factory = AsyncMock(return_value=fake_graph)
+    service = CanvasAssistantService(
+        session_store=store,
+        agent_factory=agent_factory,
+        inspection_tools=inspection_tools,
+        canvas_execution_tools=AsyncMock(),
+        generation_tools=AsyncMock(),
+    )
+
+    result = await service.chat(
+        CanvasAssistantChatRequest(
+            document_id="doc-1",
+            message="根据剧本分出八个分镜并写到画布",
+            api_key_id="key-1",
+            chat_model_id="model-1",
+        ),
+        user_id="user-1",
+    )
+
+    assert [event["type"] for event in result.events] == [
+        "agent.session.started",
+        "agent.tool.call",
+        "agent.tool.result",
+        "agent.error",
+        "agent.done",
+    ]
+    assert "重复失败" in result.events[3]["data"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_chat_does_not_claim_canvas_success_without_mutation() -> None:
+    store = AsyncMock()
+    store.get_or_create.return_value = CanvasAgentSession(
+        session_id="session-1",
+        user_id="user-1",
+        document_id="doc-1",
+    )
+    inspection_tools = AsyncMock()
+    inspection_tools.inspect_graph.return_value = {
+        "document": {"id": "doc-1"},
+        "items": [],
+        "connections": [],
+        "counts": {"items": 0, "connections": 0},
+    }
+    fake_graph = _FakeAgentGraph(
+        chunks=[
+            {
+                "agent": {
+                    "messages": [
+                        {
+                            "id": "assistant-1",
+                            "type": "ai",
+                            "content": "已在画布上创建了 8 个分镜节点。",
+                            "tool_calls": [],
+                        }
+                    ]
+                }
+            }
+        ]
+    )
+    agent_factory = AsyncMock(return_value=fake_graph)
+    service = CanvasAssistantService(
+        session_store=store,
+        agent_factory=agent_factory,
+        inspection_tools=inspection_tools,
+        canvas_execution_tools=AsyncMock(),
+        generation_tools=AsyncMock(),
+    )
+
+    result = await service.chat(
+        CanvasAssistantChatRequest(
+            document_id="doc-1",
+            message="把内容写到画布上",
+            api_key_id="key-1",
+            chat_model_id="model-1",
+        ),
+        user_id="user-1",
+    )
+
+    assert result.events[-2]["type"] == "agent.error"
+    assert "尚未成功写入画布" in result.events[-2]["data"]["message"]
+    assert "尚未成功写入画布" in result.message

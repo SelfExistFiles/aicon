@@ -1,5 +1,5 @@
 <template>
-  <header class="assistant-header">
+  <header class="assistant-header" :class="{ 'assistant-header--streaming': streaming }">
     <div class="assistant-header__copy">
       <div class="assistant-header__eyebrow">Canvas assistant</div>
       <h2 class="assistant-header__title">{{ title }}</h2>
@@ -83,6 +83,10 @@
     box-shadow: 0 14px 32px rgba(34, 57, 98, 0.08);
   }
 
+  .assistant-header--streaming {
+    animation: assistant-header-breathe 2.2s ease-in-out infinite;
+  }
+
   .assistant-header__copy {
     display: flex;
     flex-direction: column;
@@ -142,6 +146,7 @@
   .assistant-status--busy {
     color: #1855d6;
     background: #e7efff;
+    animation: assistant-status-breathe 1.8s ease-in-out infinite;
   }
 
   .assistant-status--warning {
@@ -172,5 +177,27 @@
     background: rgba(75, 120, 255, 0.08);
     color: #355ce0;
     border: 1px solid rgba(75, 120, 255, 0.12);
+  }
+
+  @keyframes assistant-header-breathe {
+    0%,
+    100% {
+      transform: translateY(0);
+      box-shadow: 0 14px 32px rgba(34, 57, 98, 0.08);
+    }
+    50% {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 38px rgba(75, 120, 255, 0.16);
+    }
+  }
+
+  @keyframes assistant-status-breathe {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(75, 120, 255, 0.28);
+    }
+    50% {
+      box-shadow: 0 0 0 8px rgba(75, 120, 255, 0);
+    }
   }
 </style>

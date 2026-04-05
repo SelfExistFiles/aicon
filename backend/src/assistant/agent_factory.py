@@ -21,6 +21,28 @@ from src.assistant.tools.generation_tools import CanvasAssistantGenerationTools
 from src.services.api_key import APIKeyService
 from src.services.provider.factory import ProviderFactory
 
+SYSTEM_PROMPT = (
+    "你是 Aicon Canvas Agent，一个工作在无限画布中的 AI 视频创作编排助手。"
+    "你不是普通聊天助手，你的首要目标是帮助用户在画布上创建、拆分、派生、优化、引用、连接节点。"
+    "当前画布只有三种基础节点：text、image、video。"
+    "你只能返回 JSON，不要输出 markdown，不要输出多余解释。"
+    "如果需要调用工具，返回 {\"kind\":\"tool_call\",\"tool_name\":\"...\",\"args\":{},\"message\":\"\"}。"
+    "如果任务已完成或需要澄清，返回 {\"kind\":\"final\",\"message\":\"...\"}。"
+    "你在每次响应前都必须先思考：用户想创建哪类节点、是否需要复用已有节点、是否需要引用、是否需要连线、应该输出一个节点还是多个节点。"
+    "复杂任务必须先识别节点，再识别引用关系，再识别连线关系，最后再给节点具体内容。"
+    "默认优先服务画布操作，而不是泛泛解释。"
+    "如果用户目标不明确、缺少必要信息、或当前没有可引用的上游节点，优先澄清，不要伪造上下文。"
+    "如果任务是拆分、派生、继续创作，默认保留创作链路：优先为新节点保留对上游节点的引用，并自动建立连线。"
+    "如果任务涉及多个节点、多个分镜、多个步骤或批量落图，必须优先使用批量工具，禁止循环多次调用单节点 create/update。"
+    "如果任务要求“写到画布上”，完成标准必须是真实发生了画布变更，而不是仅给出一段文字。"
+    "如果任务要求“拆成 8 个分镜”，完成标准必须是创建了 8 个节点，不允许用一个总节点替代。"
+    "如果需要基于已有剧本、图片、视频继续创作，优先先 inspect 再执行。"
+    "generation_submit 只适用于给已有节点提交生成任务，不适用于代替批量拆分落图。"
+    "同一个工具调用如果在当前回合失败一次，不要原样重试；你必须换参数、换工具或回到澄清。"
+    "删除和破坏性动作属于高风险操作，必须经过人工确认。"
+    "常见链路包括：创意/故事→剧本→分镜→图片→视频；角色设定→角色图→镜头图→视频；参考图→提示词→视频提示词→视频。"
+)
+
 
 def _normalize_create_item_payload(
     *,
@@ -94,6 +116,41 @@ def _normalize_generation_payload(
         normalized_payload["options"] = options
 
     return normalized_item_id, normalized_kind, normalized_payload
+
+
+def _normalize_canvas_node_payload(item: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = dict(item or {})
+    node_type = str(payload.get("node_type") or payload.get("item_type") or "text").strip() or "text"
+    content = payload.get("content")
+    if isinstance(content, str):
+        content = {"text": content}
+    elif not isinstance(content, dict):
+        content = {}
+    purpose = str(payload.get("purpose") or "").strip()
+    if purpose:
+        content.setdefault("assistant_purpose", purpose)
+    next_step = str(payload.get("next_step") or "").strip()
+    if next_step:
+        content.setdefault("assistant_next_step", next_step)
+    references = payload.get("references")
+    if references is not None:
+        content["assistant_references"] = list(references or [])
+    return {
+        "client_id": str(payload.get("client_id") or payload.get("key") or "").strip(),
+        "title": str(payload.get("title") or "").strip(),
+        "item_type": node_type,
+        "node_type": node_type,
+        "purpose": purpose,
+        "content": content,
+        "references": list(payload.get("references") or []),
+        "connections": list(payload.get("connections") or []),
+        "next_step": next_step,
+        "width": payload.get("width", 320),
+        "height": payload.get("height", 220),
+        "position_x": payload.get("position_x"),
+        "position_y": payload.get("position_y"),
+        "z_index": payload.get("z_index"),
+    }
 
 
 def _extract_message_content(response: Any) -> str:
@@ -195,14 +252,7 @@ class CanvasAssistantToolCallingChatModel(BaseChatModel):
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "你是 Aicon Canvas Agent。你只能返回 JSON。"
-                        "如果需要调用工具，返回 {\"kind\":\"tool_call\",\"tool_name\":\"...\",\"args\":{},\"message\":\"\"}。"
-                        "如果任务已完成，返回 {\"kind\":\"final\",\"message\":\"...\"}。"
-                        "如果用户目标不明确、缺少必要信息、或存在多种合理执行方式，优先直接回复澄清问题，不要擅自创建、修改、删除任何节点。"
-                        "只有当用户明确要求在画布上执行具体动作，且参数足够明确时，才调用工具。"
-                        "删除和破坏性动作在工具层会触发人工确认。"
-                    ),
+                    "content": SYSTEM_PROMPT,
                 },
                 {
                     "role": "system",
@@ -312,7 +362,7 @@ class CanvasAssistantAgentFactory:
 
         @tool
         async def canvas_find_items(query: str) -> dict[str, Any]:
-            """查找可能匹配用户意图的画布节点。"""
+            """查找可能匹配用户意图的画布节点。用于定位剧本、角色图、参考图、已有分镜等上游节点。任何需要基于现有节点继续创作、拆分、派生、连接的任务，都应优先先用这个工具定位目标。"""
             conf = _config()
             result = await inspection_tools.find_items(conf["document_id"], conf["user_id"], query)
             return {
@@ -323,6 +373,36 @@ class CanvasAssistantAgentFactory:
                 "audit": {"tool_name": "canvas.find_items", "target_ids": [str(item.get('id') or '') for item in result], "risk_level": "low"},
                 "error": None,
                 "items": result,
+            }
+
+        @tool
+        async def canvas_read_item_detail(item_id: str) -> dict[str, Any]:
+            """读取一个节点的详细内容。用于在拆分、派生、改写、继续创作前确认节点内容与类型。找到候选节点后，如果后续操作依赖其正文、prompt、引用信息，应先读取细节。"""
+            conf = _config()
+            detail = await inspection_tools.read_item_detail(conf["document_id"], conf["user_id"], item_id)
+            return {
+                "ok": True,
+                "summary": f"已读取节点 {item_id} 的详细信息。",
+                "effect": {"mutated": False, "needs_refresh": False, "refresh_scopes": [], "side_effects": []},
+                "display": {"level": "info", "title": "已读取节点细节", "message": "可继续基于该节点执行拆分或派生"},
+                "audit": {"tool_name": "canvas.read_item_detail", "target_ids": [item_id], "risk_level": "low"},
+                "error": None,
+                "item": detail,
+            }
+
+        @tool
+        async def canvas_read_neighbors(item_ids: list[str]) -> dict[str, Any]:
+            """读取节点的相邻关系。用于判断已有工作流链路、是否需要复用上游节点、以及新增节点应如何连线。复杂关系型任务在落图前可先用它了解邻接结构。"""
+            conf = _config()
+            detail = await inspection_tools.read_neighbors(conf["document_id"], conf["user_id"], item_ids)
+            return {
+                "ok": True,
+                "summary": "已读取相邻节点与连线关系。",
+                "effect": {"mutated": False, "needs_refresh": False, "refresh_scopes": [], "side_effects": []},
+                "display": {"level": "info", "title": "已读取邻接关系", "message": "可继续规划引用与连线"},
+                "audit": {"tool_name": "canvas.read_neighbors", "target_ids": list(item_ids or []), "risk_level": "low"},
+                "error": None,
+                **to_jsonable(detail),
             }
 
         @tool
@@ -370,6 +450,42 @@ class CanvasAssistantAgentFactory:
             }
 
         @tool
+        async def canvas_create_items(
+            items: list[dict[str, Any]],
+            layout: dict[str, Any] | None = None,
+            source_item_id: str = "",
+        ) -> dict[str, Any]:
+            """批量创建多个节点，并可自动排布、自动引用上游节点、自动建立连线。多分镜、多步骤、多卡片、多节点落图时必须优先使用这个工具，而不是多次调用 canvas_create_item。若任务来自同一个上游节点（如剧本拆分成多个分镜），请提供 source_item_id。items 中每个节点至少包含 node_type、title、purpose、content，可选 references、connections、next_step。"""
+            conf = _config()
+            normalized_items = [_normalize_canvas_node_payload(item) for item in list(items or [])]
+            raw = await execution_tools.create_items(
+                conf["document_id"],
+                conf["user_id"],
+                normalized_items,
+                layout,
+                source_item_id,
+            )
+            normalized = to_jsonable(raw)
+            return {
+                **normalized,
+                "ok": True,
+                "summary": str((normalized.get("effect") or {}).get("summary") or "已批量创建节点。"),
+                "effect": {
+                    **dict(normalized.get("effect") or {}),
+                    "needs_refresh": True,
+                    "refresh_scopes": ["document"],
+                    "side_effects": [],
+                },
+                "display": {"level": "info", "title": "已批量创建节点", "message": "节点与关系已写入画布"},
+                "audit": {
+                    "tool_name": "canvas.create_items",
+                    "target_ids": list((normalized.get("effect") or {}).get("created_item_ids") or []),
+                    "risk_level": "low",
+                },
+                "error": None,
+            }
+
+        @tool
         async def canvas_update_item(item_id: str, patch: dict[str, Any]) -> dict[str, Any]:
             """更新一个已有节点。"""
             conf = _config()
@@ -387,6 +503,31 @@ class CanvasAssistantAgentFactory:
                 },
                 "display": {"level": "info", "title": "已更新节点", "message": "画布节点已更新"},
                 "audit": {"tool_name": "canvas.update_item", "target_ids": [item_id], "risk_level": "low"},
+                "error": None,
+            }
+
+        @tool
+        async def canvas_update_items(updates: list[dict[str, Any]]) -> dict[str, Any]:
+            """批量更新多个节点。多个节点统一改写、统一风格、统一补全字段时必须优先使用这个工具，而不是循环调用 canvas_update_item。每项更新格式为 {item_id, patch}。"""
+            conf = _config()
+            raw = await execution_tools.update_items(conf["document_id"], conf["user_id"], updates)
+            normalized = to_jsonable(raw)
+            return {
+                **normalized,
+                "ok": True,
+                "summary": str((normalized.get("effect") or {}).get("summary") or "已批量更新节点。"),
+                "effect": {
+                    **dict(normalized.get("effect") or {}),
+                    "needs_refresh": True,
+                    "refresh_scopes": ["document"],
+                    "side_effects": [],
+                },
+                "display": {"level": "info", "title": "已批量更新节点", "message": "批量修改已写入画布"},
+                "audit": {
+                    "tool_name": "canvas.update_items",
+                    "target_ids": list((normalized.get("effect") or {}).get("updated_item_ids") or []),
+                    "risk_level": "low",
+                },
                 "error": None,
             }
 
@@ -468,8 +609,12 @@ class CanvasAssistantAgentFactory:
 
         return [
             canvas_find_items,
+            canvas_read_item_detail,
+            canvas_read_neighbors,
             canvas_create_item,
+            canvas_create_items,
             canvas_update_item,
+            canvas_update_items,
             canvas_delete_items,
             generation_submit,
         ]

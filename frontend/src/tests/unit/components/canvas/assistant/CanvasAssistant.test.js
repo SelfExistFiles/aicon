@@ -169,4 +169,42 @@ describe('CanvasAssistant', () => {
     await wrapper.find('.assistant-header__reset').trigger('click')
     expect(reset).toHaveBeenCalled()
   })
+
+  it('adds streaming state classes so breathing animations can render while processing', () => {
+    useCanvasAssistant.mockReturnValue({
+      sessionId: ref('session-stream'),
+      status: ref('streaming'),
+      error: ref(''),
+      eventLog: ref([]),
+      messages: ref([]),
+      pendingInterrupt: ref(null),
+      apiKeyOptions: ref([{ id: 'key-1', label: '主 Key', provider: 'openai' }]),
+      chatModelOptions: ref(['gpt-4o-mini']),
+      selectedApiKeyId: ref('key-1'),
+      selectedChatModelId: ref('gpt-4o-mini'),
+      apiKeysLoading: ref(false),
+      chatModelsLoading: ref(false),
+      isStreaming: ref(true),
+      canSend: ref(false),
+      sendMessage: vi.fn(),
+      updateSelectedApiKeyId: vi.fn(),
+      updateSelectedChatModelId: vi.fn(),
+      resumeInterrupt: vi.fn(),
+      updatePendingInterruptModelId: vi.fn(),
+      reset: vi.fn()
+    })
+
+    useCanvasAssistantTimeline.mockReturnValue({
+      timelineItems: computed(() => [])
+    })
+
+    const wrapper = mount(CanvasAssistant, {
+      props: {
+        documentId: 'doc-1'
+      }
+    })
+
+    expect(wrapper.classes()).toContain('canvas-assistant--streaming')
+    expect(wrapper.find('.assistant-header').classes()).toContain('assistant-header--streaming')
+  })
 })

@@ -109,13 +109,13 @@ export const reduceCanvasAssistantEventLog = ({ eventLog = [], selectedModelId =
     if (!event || typeof event !== 'object') continue
     switch (event.kind) {
       case 'session':
-        status = 'running'
+        status = 'streaming'
         isStreaming = true
         break
       case 'message':
       case 'message_completed':
         upsertMessage(event.message || {})
-        status = 'running'
+        status = 'streaming'
         if (event.kind === 'message_completed') {
           isStreaming = false
         }
@@ -123,7 +123,7 @@ export const reduceCanvasAssistantEventLog = ({ eventLog = [], selectedModelId =
       case 'tool':
         upsertActivity(event.toolCall || {})
         activeTool = String(event.toolCall?.toolName || '').trim() || activeTool
-        status = 'running'
+        status = 'streaming'
         if (event.toolCall?.status === 'completed') {
           activeTool = null
           const effect = event.toolCall?.effect || event.toolCall?.result?.effect || {}
@@ -152,7 +152,7 @@ export const reduceCanvasAssistantEventLog = ({ eventLog = [], selectedModelId =
         break
       case 'interrupt_resolved':
         pendingInterrupt = null
-        status = 'running'
+        status = 'streaming'
         isStreaming = true
         break
       case 'error':

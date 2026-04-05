@@ -86,6 +86,41 @@ def _normalize_tool_message(message: Any) -> tuple[str, str, Any]:
     return tool_call_id, tool_name, to_jsonable(content)
 
 
+def _tool_signature(tool_name: str, args: Any) -> str:
+    normalized_args = to_jsonable(args or {})
+    return f"{str(tool_name or '').strip()}::{json.dumps(normalized_args, ensure_ascii=False, sort_keys=True)}"
+
+
+def _is_tool_failure(result: Any) -> bool:
+    if isinstance(result, dict):
+        if result.get("ok") is False:
+            return True
+        if result.get("error"):
+            return True
+        content = str(result.get("content") or "").strip()
+        if content.lower().startswith("error invoking tool"):
+            return True
+    if isinstance(result, str):
+        return result.strip().lower().startswith("error invoking tool")
+    return False
+
+
+def _goal_requires_canvas_mutation(goal: str) -> bool:
+    normalized = str(goal or "").strip()
+    if not normalized:
+        return False
+    keywords = ("写到画布", "写入画布", "创建", "新建", "拆成", "拆分", "生成", "节点", "分镜")
+    return any(keyword in normalized for keyword in keywords)
+
+
+def _message_claims_canvas_success(message: str) -> bool:
+    normalized = str(message or "").strip()
+    if not normalized:
+        return False
+    keywords = ("已在画布", "已创建", "已写入", "已生成", "已新增", "已拆成")
+    return any(keyword in normalized for keyword in keywords)
+
+
 class CanvasAssistantService:
     def __init__(
         self,
@@ -230,6 +265,8 @@ class CanvasAssistantService:
         final_message = ""
         pending_interrupt: AgentInterrupt | None = None
         tool_history: list[dict[str, Any]] = []
+        call_signatures: dict[str, str] = {}
+        failed_signatures: set[str] = set()
 
         def emit(event_type: str, payload_data: dict[str, Any], correlation_id: str = "") -> None:
             nonlocal sequence
@@ -298,6 +335,23 @@ class CanvasAssistantService:
                         tool_calls = _normalize_message_tool_calls(message)
                         if tool_calls:
                             for tool_call in tool_calls:
+                                signature = _tool_signature(tool_call.get("name"), tool_call.get("args"))
+                                if signature in failed_signatures:
+                                    final_message = "检测到同一工具调用重复失败，已停止继续重试，请调整参数或改用其他策略。"
+                                    emit("agent.error", {"message": final_message})
+                                    emit("agent.done", {"session_id": session_id})
+                                    return {
+                                        "events": events,
+                                        "message": final_message,
+                                        "pending_interrupt": pending_interrupt,
+                                        "tool_history": tool_history,
+                                        "graph_state": {
+                                            "api_key_id": str(config.get("configurable", {}).get("api_key_id") or ""),
+                                            "chat_model_id": str(config.get("configurable", {}).get("chat_model_id") or ""),
+                                            "run_id": run_id,
+                                        },
+                                    }
+                                call_signatures[str(tool_call.get("id") or "")] = signature
                                 emit(
                                     "agent.tool.call",
                                     {
@@ -327,11 +381,17 @@ class CanvasAssistantService:
                     for message in list(tools_payload.get("messages") or []):
                         correlation_id, tool_name, result = _normalize_tool_message(message)
                         normalized_result = to_jsonable(result)
+                        status = "failed" if _is_tool_failure(normalized_result) else "completed"
+                        if status == "failed":
+                            signature = call_signatures.get(correlation_id, "")
+                            if signature:
+                                failed_signatures.add(signature)
                         tool_history.append(
                             {
                                 "correlation_id": correlation_id,
                                 "tool_name": tool_name,
                                 "result": normalized_result,
+                                "status": status,
                             }
                         )
                         emit(
@@ -339,7 +399,7 @@ class CanvasAssistantService:
                             {
                                 "id": correlation_id,
                                 "tool_name": tool_name,
-                                "status": "completed",
+                                "status": status,
                                 "result": normalized_result,
                                 "effect": dict(normalized_result.get("effect") or {}) if isinstance(normalized_result, dict) else {},
                             },
@@ -363,19 +423,43 @@ class CanvasAssistantService:
         }
 
     async def _finalize_session(self, session: CanvasAgentSession, consumed: dict[str, Any]) -> CanvasAssistantTurnResult:
+        events = list(consumed.get("events") or [])
         message = str(consumed.get("message") or "").strip()
         pending_interrupt = consumed.get("pending_interrupt")
+        any_mutation = any(
+            bool((entry.get("result") or {}).get("effect", {}).get("mutated"))
+            for entry in list(consumed.get("tool_history") or [])
+            if isinstance(entry, dict) and isinstance(entry.get("result"), dict)
+        )
+        if _goal_requires_canvas_mutation(session.user_goal) and _message_claims_canvas_success(message) and not any_mutation:
+            message = "尚未成功写入画布：本轮没有产生真实节点变更，请补充更明确的目标或先指定上游节点。"
+            events.insert(
+                max(len(events) - 1, 0),
+                {
+                    "type": "agent.error",
+                    "data": {
+                        "message": message,
+                        "event_id": f"{session.session_id}-consistency",
+                        "session_id": session.session_id,
+                        "thread_id": session.session_id,
+                        "run_id": str((consumed.get("graph_state") or {}).get("run_id") or ""),
+                        "timestamp": _utc_now_iso(),
+                        "sequence": len(events),
+                        "correlation_id": "",
+                    },
+                },
+            )
         if message:
             session.conversation.append({"role": "assistant", "content": message})
         session.graph_state = dict(consumed.get("graph_state") or {})
         session.pending_interrupt = pending_interrupt if isinstance(pending_interrupt, AgentInterrupt) else None
         session.tool_history = list(consumed.get("tool_history") or [])[-8:]
         session.resume_in_flight = False
-        session.status = "failed" if any(event.get("type") == "agent.error" for event in list(consumed.get("events") or [])) else ("interrupted" if session.pending_interrupt else "completed")
+        session.status = "failed" if any(event.get("type") == "agent.error" for event in events) else ("interrupted" if session.pending_interrupt else "completed")
         await self.session_store.save(session)
         return CanvasAssistantTurnResult(
             session_id=session.session_id,
             message=message,
-            events=list(consumed.get("events") or []),
+            events=events,
             pending_interrupt=session.pending_interrupt,
         )
