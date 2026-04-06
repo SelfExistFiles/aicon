@@ -47,6 +47,42 @@ def _json_object(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _build_image_mention_token(*, node_id: str, title: str) -> dict[str, Any]:
+    normalized_node_id = _string(node_id)
+    normalized_title = _string(title)
+    return {
+        "type": "mention",
+        "mentionId": f"mention-image-{normalized_node_id}",
+        "nodeId": normalized_node_id,
+        "nodeType": "image",
+        "nodeTitleSnapshot": normalized_title,
+    }
+
+
+def _build_prompt_tokens_with_mentions(
+    mentions: list[dict[str, Any]],
+    prompt_text: str,
+) -> tuple[list[dict[str, Any]], str]:
+    tokens: list[dict[str, Any]] = []
+    plain_parts: list[str] = []
+    for mention in mentions:
+        if not isinstance(mention, dict):
+            continue
+        node_id = _string(mention.get("nodeId"))
+        title = _string(mention.get("nodeTitle"))
+        if not node_id or not title:
+            continue
+        tokens.append(_build_image_mention_token(node_id=node_id, title=title))
+        plain_parts.append(f"@{title}")
+        if prompt_text:
+            tokens.append({"type": "text", "text": "\n"})
+            plain_parts.append("\n")
+    if prompt_text:
+        tokens.append({"type": "text", "text": prompt_text})
+        plain_parts.append(prompt_text)
+    return tokens, "".join(plain_parts).strip()
+
+
 def _normalize_model_response_text(response: Any) -> str:
     choices = getattr(response, "choices", None) or []
     if choices:
@@ -432,6 +468,10 @@ class CanvasAssistantWorkflowService:
                         }
                     )
                 keyframe_prompt = _string(shot.get("keyframe_prompt"))
+                keyframe_prompt_tokens, keyframe_prompt_plain_text = _build_prompt_tokens_with_mentions(
+                    resolved_mentions,
+                    keyframe_prompt,
+                )
                 keyframe_item = await self.canvas_service.create_item(
                     document_id,
                     user_id,
@@ -446,7 +486,8 @@ class CanvasAssistantWorkflowService:
                         "content": {
                             "prompt": keyframe_prompt,
                             "draft_prompt": keyframe_prompt,
-                            "prompt_plain_text": keyframe_prompt,
+                            "prompt_plain_text": keyframe_prompt_plain_text or keyframe_prompt,
+                            "promptTokens": keyframe_prompt_tokens,
                             "resolved_mentions": resolved_mentions,
                             "resolvedMentions": resolved_mentions,
                             "character_image_mentions": resolved_mentions,
