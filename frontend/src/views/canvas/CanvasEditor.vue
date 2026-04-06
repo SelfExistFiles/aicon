@@ -1267,17 +1267,21 @@ import CanvasTextStudio from '@/components/canvas/CanvasTextStudio.vue'
 
   const handleGenerate = async () => {
     if (!selectedItem.value) return
+    const targetItem = selectedItem.value
+    const targetItemId = String(targetItem.id || '').trim()
     try {
       syncSelectedStudioDraft()
       if (dirty.value) {
         await save()
       }
       const response = await generate(
-        selectedItem.value,
-        buildGenerationPayload(selectedItem.value)
+        targetItem,
+        buildGenerationPayload(targetItem)
       )
       ElMessage.success(response.message || '生成任务已提交')
-      await loadHistory(selectedItem.value.id)
+      if (targetItemId) {
+        await loadHistory(targetItemId)
+      }
     } catch (error) {
       ElMessage.error(
         error?.response?.data?.detail || error?.message || '生成提交失败'

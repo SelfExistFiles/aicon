@@ -5,7 +5,7 @@
 import { nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import CanvasEditor from '@/views/canvas/CanvasEditor.vue'
 import { useCanvasEditor } from '@/composables/useCanvasEditor'
 import { useCanvasGeneration } from '@/composables/useCanvasGeneration'
@@ -672,6 +672,114 @@ describe('CanvasEditor assistant wiring', () => {
       }
     })
 
+    wrapper.unmount()
+  })
+
+  it('uses the original item id to refresh history after generation succeeds even if selection is cleared', async () => {
+    const loadHistory = vi.fn(async () => [])
+    const generate = vi.fn(async () => {
+      selectedItem.value = null
+      return { message: '生成任务已提交' }
+    })
+    const save = vi.fn(async () => ({}))
+    const selectedItem = ref({
+      id: 'item-image-1',
+      item_type: 'image',
+      title: '图片节点 1',
+      position_x: 20,
+      position_y: 30,
+      width: 320,
+      height: 220,
+      z_index: 1,
+      content: { prompt: 'hello', promptTokens: [] },
+      generation_config: {},
+      last_run_status: 'idle',
+      last_run_error: null,
+      last_output: {},
+      has_detail: true,
+      is_persisted: true
+    })
+
+    useCanvasEditor.mockReturnValue({
+      loading: ref(false),
+      saving: ref(false),
+      document: ref({ id: 'doc-1', title: 'Canvas Doc' }),
+      items: ref([selectedItem.value]),
+      connections: ref([]),
+      selectedItemIds: ref(['item-image-1']),
+      selectedItemId: ref('item-image-1'),
+      selectedItem,
+      zoom: ref(1),
+      pan: ref({ x: 0, y: 0 }),
+      dirty: ref(true),
+      loadDocument: vi.fn(),
+      save,
+      createItem: vi.fn(),
+      updateItem: vi.fn(),
+      removeItem: vi.fn(),
+      removeItems: vi.fn(),
+      setSelection: vi.fn(),
+      setSelections: vi.fn(),
+      clearSelection: vi.fn(),
+      startConnection: vi.fn(),
+      completeConnection: vi.fn(),
+      removeConnection: vi.fn(),
+      updateViewport: vi.fn()
+    })
+
+    useCanvasGeneration.mockReturnValue({
+      generationLoadingByItem: {},
+      generationHistories: {},
+      historyLoadingByItem: {},
+      loadHistory,
+      generate,
+      applyGeneration: vi.fn()
+    })
+
+    const successSpy = vi.spyOn(ElMessage, 'success').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(ElMessage, 'error').mockImplementation(() => {})
+
+    const wrapper = mount(CanvasEditor, {
+      global: {
+        directives: {
+          loading: {
+            mounted() {},
+            updated() {}
+          }
+        },
+        stubs: {
+          CanvasConnectionActions: true,
+          CanvasGenerationHistoryDrawer: true,
+          CanvasImageStudio: {
+            name: 'CanvasImageStudio',
+            emits: ['generate'],
+            template: '<button class="generate-image" @click="$emit(\'generate\')"></button>'
+          },
+          CanvasLinkCreateMenu: true,
+          CanvasLinkDragOverlay: true,
+          CanvasWorkbenchLayout: {
+            name: 'CanvasWorkbenchLayout',
+            template: '<div class="workbench-stub"><slot /></div>'
+          },
+          CanvasTextStudio: true,
+          CanvasVideoStudio: true,
+          KonvaCanvasStage: true
+        }
+      }
+    })
+
+    await wrapper.get('.generate-image').trigger('click')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(generate).toHaveBeenCalledTimes(1)
+    expect(loadHistory).toHaveBeenCalledWith('item-image-1')
+    expect(successSpy).toHaveBeenCalled()
+    expect(errorSpy).not.toHaveBeenCalled()
+
+    successSpy.mockRestore()
+    errorSpy.mockRestore()
     wrapper.unmount()
   })
 })
